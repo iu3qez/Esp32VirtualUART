@@ -1,0 +1,27 @@
+# ESP-IDF build artifacts
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# Frontend build
+frontend/node_modules/
+frontend/dist/
+data/www/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/
+.tldr/
+.tldrignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Thoughts/planning docs (local only)
+thoughts/
