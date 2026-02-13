@@ -6,14 +6,18 @@
 #include "port.h"
 #include "port_registry.h"
 #include "port_cdc.h"
+#include "port_uart.h"
+#include "route.h"
+#include "signal_router.h"
+#include "config_store.h"
 #include "status_led.h"
 
 static const char *TAG = "main";
 
 // RGB LED GPIO - adjust for your board
-// ESP32-S3-DevKitC: GPIO48
-// Some boards: GPIO38
 #define STATUS_LED_GPIO     GPIO_NUM_48
+
+static system_config_t sys_config;
 
 void app_main(void)
 {
@@ -23,7 +27,7 @@ void app_main(void)
     status_led_init(STATUS_LED_GPIO);
     status_led_set_state(LED_STATE_BOOTING);
 
-    // 2. Init NVS flash (needed for config persistence later)
+    // 2. Init NVS flash
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "NVS flash needs erase, reformatting...");
@@ -36,15 +40,19 @@ void app_main(void)
         return;
     }
 
-    // 3. Init port registry
+    // 3. Load config
+    config_store_init();
+    config_store_load(&sys_config);
+
+    // 4. Init port registry
     ret = port_registry_init();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Port registry init failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Port registry init failed");
         status_led_set_state(LED_STATE_ERROR);
         return;
     }
 
-    // 4. Init CDC ports (USB virtual COM ports)
+    // 5. Init CDC ports (USB virtual COM ports) - IDs 0, 1
     ret = port_cdc_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "CDC init failed: %s", esp_err_to_name(ret));
@@ -52,36 +60,98 @@ void app_main(void)
         return;
     }
 
-    // Boot complete - show ready state
+    // 6. Init UART ports - IDs 2, 3
+    for (int i = 0; i < 2; i++) {
+        uart_pin_config_t pin_cfg = {
+            .uart_num = sys_config.uart_configs[i].uart_num,
+            .tx_pin   = sys_config.uart_configs[i].tx_pin,
+            .rx_pin   = sys_config.uart_configs[i].rx_pin,
+            .rts_pin  = sys_config.uart_configs[i].rts_pin,
+            .cts_pin  = sys_config.uart_configs[i].cts_pin,
+            .dtr_pin  = sys_config.uart_configs[i].dtr_pin,
+            .dsr_pin  = sys_config.uart_configs[i].dsr_pin,
+            .dcd_pin  = sys_config.uart_configs[i].dcd_pin,
+            .ri_pin   = sys_config.uart_configs[i].ri_pin,
+        };
+        ret = port_uart_init(2 + i, &pin_cfg);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "UART%d init failed: %s (continuing)", pin_cfg.uart_num, esp_err_to_name(ret));
+        }
+    }
+
+    // 7. Init routing engine
+    ret = route_engine_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Route engine init failed");
+        status_led_set_state(LED_STATE_ERROR);
+        return;
+    }
+
+    // 8. Start signal router
+    signal_router_init();
+
+    // 9. Restore saved routes
+    for (int i = 0; i < sys_config.route_count && i < ROUTE_MAX_COUNT; i++) {
+        route_t r = {0};
+        r.type = sys_config.routes[i].type;
+        r.src_port_id = sys_config.routes[i].src_port_id;
+        r.dst_count = sys_config.routes[i].dst_count;
+        memcpy(r.dst_port_ids, sys_config.routes[i].dst_port_ids, sizeof(r.dst_port_ids));
+        r.signal_map_count = sys_config.routes[i].signal_map_count;
+        memcpy(r.signal_map, sys_config.routes[i].signal_map, sizeof(r.signal_map));
+
+        uint8_t route_id;
+        if (route_create(&r, &route_id) == ESP_OK) {
+            route_start(route_id);
+        }
+    }
+
+    // Boot complete
     status_led_set_state(LED_STATE_READY);
-    ESP_LOGI(TAG, "ESP32 Virtual UART ready! %d ports registered.",
-             port_registry_count());
+    ESP_LOGI(TAG, "ESP32 Virtual UART ready! %d ports, %d routes",
+             port_registry_count(), route_active_count());
 
     // Log registered ports
     port_t *all_ports[PORT_MAX_COUNT];
     int count = port_registry_get_all(all_ports, PORT_MAX_COUNT);
     for (int i = 0; i < count; i++) {
-        ESP_LOGI(TAG, "  Port: %s (id=%d, type=%d, state=%d)",
-                 all_ports[i]->name, all_ports[i]->id,
-                 all_ports[i]->type, all_ports[i]->state);
+        ESP_LOGI(TAG, "  Port: %s (id=%d, type=%d)",
+                 all_ports[i]->name, all_ports[i]->id, all_ports[i]->type);
     }
 
-    // Main loop: monitor port states and update LED
+    // Main loop: monitor state and update LED
     while (1) {
-        // Check if any CDC port has DTR set (host connected and opened port)
-        bool any_active = false;
+        bool any_cdc_active = false;
+        bool any_data_flowing = false;
+
         for (int i = 0; i < count; i++) {
             if (all_ports[i]->type == PORT_TYPE_CDC && (all_ports[i]->signals & SIGNAL_DTR)) {
-                any_active = true;
-                break;
+                any_cdc_active = true;
+            }
+        }
+
+        // Check if any routes have data flowing
+        route_t active_routes[ROUTE_MAX_COUNT];
+        int rcount = route_get_all(active_routes, ROUTE_MAX_COUNT);
+        for (int i = 0; i < rcount; i++) {
+            if (active_routes[i].bytes_fwd_src_to_dst > 0 || active_routes[i].bytes_fwd_dst_to_src > 0) {
+                any_data_flowing = true;
+                status_led_set_activity();
+                route_reset_counters(active_routes[i].id);
             }
         }
 
         led_state_t current = status_led_get_state();
-        if (any_active && current == LED_STATE_READY) {
-            status_led_set_state(LED_STATE_IDLE);
-        } else if (!any_active && current == LED_STATE_IDLE) {
-            status_led_set_state(LED_STATE_READY);
+        if (current != LED_STATE_ERROR && current != LED_STATE_WIFI_CONNECTING) {
+            if (any_data_flowing) {
+                status_led_set_state(LED_STATE_DATA_FLOW);
+            } else if (any_cdc_active && rcount > 0) {
+                status_led_set_state(LED_STATE_IDLE);
+            } else if (any_cdc_active) {
+                status_led_set_state(LED_STATE_IDLE);
+            } else {
+                status_led_set_state(LED_STATE_READY);
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(500));
