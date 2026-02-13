@@ -12,6 +12,7 @@
 #include "config_store.h"
 #include "wifi_mgr.h"
 #include "port_tcp.h"
+#include "web_server.h"
 #include "status_led.h"
 
 static const char *TAG = "main";
@@ -19,7 +20,7 @@ static const char *TAG = "main";
 // RGB LED GPIO - adjust for your board
 #define STATUS_LED_GPIO     GPIO_NUM_48
 
-static system_config_t sys_config;
+system_config_t sys_config;
 
 void app_main(void)
 {
@@ -129,6 +130,12 @@ void app_main(void)
         }
     }
 
+    // 12. Start web server (HTTP + WebSocket + static files)
+    ret = web_server_start();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Web server start failed: %s (continuing)", esp_err_to_name(ret));
+    }
+
     // Boot complete
     status_led_set_state(LED_STATE_READY);
     ESP_LOGI(TAG, "ESP32 Virtual UART ready! %d ports, %d routes",
@@ -160,6 +167,9 @@ void app_main(void)
             if (active_routes[i].bytes_fwd_src_to_dst > 0 || active_routes[i].bytes_fwd_dst_to_src > 0) {
                 any_data_flowing = true;
                 status_led_set_activity();
+                web_server_notify_data_flow(active_routes[i].id,
+                    active_routes[i].bytes_fwd_src_to_dst,
+                    active_routes[i].bytes_fwd_dst_to_src);
                 route_reset_counters(active_routes[i].id);
             }
         }
