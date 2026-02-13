@@ -12,7 +12,7 @@ typedef struct {
     char     host[64];
     uint16_t port;
     bool     is_server;
-} tcp_port_config_t;
+} tcp_persist_config_t;
 
 typedef struct {
     int      uart_num;
@@ -37,7 +37,7 @@ typedef struct {
     port_line_coding_t      port_coding[PORT_MAX_COUNT];
 
     // TCP port configs
-    tcp_port_config_t       tcp_configs[4];
+    tcp_persist_config_t    tcp_configs[4];
 
     // UART pin configs
     uart_persist_config_t   uart_configs[2];

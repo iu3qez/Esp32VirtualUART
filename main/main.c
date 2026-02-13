@@ -10,6 +10,8 @@
 #include "route.h"
 #include "signal_router.h"
 #include "config_store.h"
+#include "wifi_mgr.h"
+#include "port_tcp.h"
 #include "status_led.h"
 
 static const char *TAG = "main";
@@ -79,7 +81,28 @@ void app_main(void)
         }
     }
 
-    // 7. Init routing engine
+    // 7. Init WiFi
+    // If STA credentials exist: tries STA, falls back to AP after retries
+    // If no credentials: starts AP mode immediately ("VirtualUART" open network)
+    status_led_set_state(LED_STATE_WIFI_CONNECTING);
+    wifi_mgr_init(
+        strlen(sys_config.wifi_ssid) > 0 ? sys_config.wifi_ssid : NULL,
+        strlen(sys_config.wifi_pass) > 0 ? sys_config.wifi_pass : NULL
+    );
+
+    // 8. Init TCP ports - IDs 4-7
+    for (int i = 0; i < 4; i++) {
+        if (sys_config.tcp_configs[i].port > 0) {
+            tcp_port_config_t tcp_cfg = {
+                .tcp_port = sys_config.tcp_configs[i].port,
+                .is_server = sys_config.tcp_configs[i].is_server,
+            };
+            strncpy(tcp_cfg.host, sys_config.tcp_configs[i].host, sizeof(tcp_cfg.host) - 1);
+            port_tcp_init(4 + i, &tcp_cfg);
+        }
+    }
+
+    // 9. Init routing engine
     ret = route_engine_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Route engine init failed");
@@ -87,10 +110,10 @@ void app_main(void)
         return;
     }
 
-    // 8. Start signal router
+    // 10. Start signal router
     signal_router_init();
 
-    // 9. Restore saved routes
+    // 11. Restore saved routes
     for (int i = 0; i < sys_config.route_count && i < ROUTE_MAX_COUNT; i++) {
         route_t r = {0};
         r.type = sys_config.routes[i].type;
@@ -142,13 +165,19 @@ void app_main(void)
         }
 
         led_state_t current = status_led_get_state();
-        if (current != LED_STATE_ERROR && current != LED_STATE_WIFI_CONNECTING) {
-            if (any_data_flowing) {
+        bool wifi_connected = wifi_mgr_is_connected();
+
+        if (current != LED_STATE_ERROR) {
+            if (any_data_flowing && wifi_connected) {
+                status_led_set_state(LED_STATE_DATA_FLOW_NET);
+            } else if (any_data_flowing) {
                 status_led_set_state(LED_STATE_DATA_FLOW);
-            } else if (any_cdc_active && rcount > 0) {
-                status_led_set_state(LED_STATE_IDLE);
+            } else if (wifi_connected && any_cdc_active) {
+                status_led_set_state(LED_STATE_WIFI_READY);
             } else if (any_cdc_active) {
                 status_led_set_state(LED_STATE_IDLE);
+            } else if (strlen(sys_config.wifi_ssid) > 0 && !wifi_connected) {
+                status_led_set_state(LED_STATE_WIFI_CONNECTING);
             } else {
                 status_led_set_state(LED_STATE_READY);
             }
