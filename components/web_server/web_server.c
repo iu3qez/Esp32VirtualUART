@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include "wifi_mgr.h"
 #include "esp_http_server.h"
 #include "esp_littlefs.h"
 #include "esp_log.h"
@@ -44,6 +45,50 @@ static const char *get_content_type(const char *path)
     return "application/octet-stream";
 }
 
+// Minimal fallback page when LittleFS is not available
+static const char *FALLBACK_HTML =
+    "<!DOCTYPE html><html><head>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>VirtualUART Setup</title>"
+    "<style>"
+    "body{font-family:sans-serif;max-width:480px;margin:40px auto;padding:0 16px;background:#1a1a2e;color:#e0e0e0}"
+    "h1{color:#0af}input,button{width:100%;padding:10px;margin:6px 0;box-sizing:border-box;border-radius:4px;border:1px solid #444;background:#16213e;color:#e0e0e0}"
+    "button{background:#0af;color:#000;border:none;cursor:pointer;font-weight:bold}"
+    ".info{background:#16213e;padding:12px;border-radius:6px;margin:12px 0}"
+    "</style></head><body>"
+    "<h1>VirtualUART</h1>"
+    "<div class='info'>Connected to AP mode. Configure WiFi to connect to your network.</div>"
+    "<form method='GET' action='/api/config'>"
+    "<p>Use the <a href='/' style='color:#0af'>web interface</a> to configure ports and routing.</p>"
+    "<p style='color:#888;font-size:0.85em'>If the web UI doesn't load, flash the frontend to the LittleFS partition.</p>"
+    "</form></body></html>";
+
+// Captive portal detection handler.
+// Responds to known probe URLs with a redirect to the AP's root page,
+// triggering the "Sign in to network" popup on phones/laptops.
+static esp_err_t captive_portal_handler(httpd_req_t *req)
+{
+    // Only redirect in AP mode
+    if (wifi_mgr_get_mode() != WIFI_MGR_MODE_AP) {
+        // In STA mode, return 204 for generate_204 or 404 for others
+        if (strstr(req->uri, "generate_204")) {
+            httpd_resp_set_status(req, "204 No Content");
+            httpd_resp_send(req, NULL, 0);
+            return ESP_OK;
+        }
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "Captive portal redirect: %s", req->uri);
+    httpd_resp_set_status(req, "302 Found");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
+    httpd_resp_send(req, "Redirecting...", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+static bool littlefs_mounted = false;
+
 // Serve static files from LittleFS
 static esp_err_t static_file_handler(httpd_req_t *req)
 {
@@ -74,6 +119,12 @@ static esp_err_t static_file_handler(httpd_req_t *req)
         // File not found - SPA fallback: serve index.html
         snprintf(filepath, sizeof(filepath), "/littlefs/www/index.html");
         if (stat(filepath, &st) != 0) {
+            // No index.html - serve fallback page in AP mode, 404 otherwise
+            if (wifi_mgr_get_mode() == WIFI_MGR_MODE_AP) {
+                httpd_resp_set_type(req, "text/html");
+                httpd_resp_send(req, FALLBACK_HTML, HTTPD_RESP_USE_STRLEN);
+                return ESP_OK;
+            }
             httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
             return ESP_OK;
         }
@@ -137,6 +188,7 @@ static esp_err_t init_littlefs(void)
         return ret;
     }
 
+    littlefs_mounted = true;
     size_t total = 0, used = 0;
     esp_littlefs_info("storage", &total, &used);
     ESP_LOGI(TAG, "LittleFS: total=%d, used=%d", (int)total, (int)used);
@@ -154,7 +206,7 @@ esp_err_t web_server_start(void)
     init_littlefs();
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 24;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.stack_size = 8192;
 
@@ -252,6 +304,26 @@ esp_err_t web_server_start(void)
         .is_websocket = true,
     };
     httpd_register_uri_handler(server, &ws_monitor_uri);
+
+    // Captive portal detection endpoints (must be before wildcard)
+    static const char *captive_portal_uris[] = {
+        "/generate_204",           // Android / Chrome
+        "/gen_204",                // Android variant
+        "/hotspot-detect.html",    // Apple iOS / macOS
+        "/library/test/success.html", // Apple variant
+        "/connecttest.txt",        // Windows
+        "/redirect",              // Windows variant
+        "/canonical.html",         // Firefox
+        "/success.txt",            // Firefox variant
+    };
+    for (int i = 0; i < sizeof(captive_portal_uris) / sizeof(captive_portal_uris[0]); i++) {
+        httpd_uri_t cp_uri = {
+            .uri = captive_portal_uris[i],
+            .method = HTTP_GET,
+            .handler = captive_portal_handler,
+        };
+        httpd_register_uri_handler(server, &cp_uri);
+    }
 
     // Static file serving (wildcard, lowest priority - registered last)
     httpd_uri_t static_uri = {

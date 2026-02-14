@@ -13,6 +13,7 @@
 #include "wifi_mgr.h"
 #include "port_tcp.h"
 #include "web_server.h"
+#include "dns_server.h"
 #include "status_led.h"
 
 static const char *TAG = "main";
@@ -21,6 +22,24 @@ static const char *TAG = "main";
 #define STATUS_LED_GPIO     GPIO_NUM_48
 
 system_config_t sys_config;
+
+// Restart web server on WiFi mode change (e.g., STA-to-AP fallback)
+static void on_wifi_mode_change(wifi_mgr_mode_t new_mode)
+{
+    ESP_LOGI(TAG, "WiFi mode changed to %d, restarting web server", (int)new_mode);
+    web_server_stop();
+    esp_err_t ret = web_server_start();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Web server restart failed: %s", esp_err_to_name(ret));
+    }
+
+    // Start DNS server in AP mode (captive portal), stop in STA mode
+    if (new_mode == WIFI_MGR_MODE_AP) {
+        dns_server_start();
+    } else {
+        dns_server_stop();
+    }
+}
 
 void app_main(void)
 {
@@ -130,10 +149,24 @@ void app_main(void)
         }
     }
 
-    // 12. Start web server (HTTP + WebSocket + static files)
+    // 12. Wait for WiFi to be ready before starting web server
+    ret = wifi_mgr_wait_ready(30000);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi not ready, starting web server anyway");
+    }
+
+    // 13. Start web server (HTTP + WebSocket + static files)
     ret = web_server_start();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Web server start failed: %s (continuing)", esp_err_to_name(ret));
+    }
+
+    // Register callback to restart web server on WiFi mode changes (e.g., STA-to-AP fallback)
+    wifi_mgr_set_mode_change_cb(on_wifi_mode_change);
+
+    // Start DNS server if already in AP mode (captive portal)
+    if (wifi_mgr_get_mode() == WIFI_MGR_MODE_AP) {
+        dns_server_start();
     }
 
     // Boot complete

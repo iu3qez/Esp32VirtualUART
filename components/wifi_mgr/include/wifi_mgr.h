@@ -35,3 +35,13 @@ esp_err_t wifi_mgr_set_credentials(const char *ssid, const char *password);
 
 // Force AP mode (e.g., from web GUI button)
 esp_err_t wifi_mgr_start_ap(void);
+
+// Block until WiFi is ready (STA connected or AP started).
+// Returns ESP_OK if ready, ESP_ERR_TIMEOUT if timeout_ms elapsed.
+esp_err_t wifi_mgr_wait_ready(uint32_t timeout_ms);
+
+// Callback type for WiFi mode changes (called on AP start, STA got IP, STA-to-AP fallback)
+typedef void (*wifi_mgr_mode_change_cb_t)(wifi_mgr_mode_t new_mode);
+
+// Register a callback for WiFi mode changes
+void wifi_mgr_set_mode_change_cb(wifi_mgr_mode_change_cb_t cb);

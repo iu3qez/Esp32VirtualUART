@@ -29,6 +29,7 @@ static char ip_str[16] = "";
 // Saved STA credentials for retry/fallback
 static char saved_ssid[33] = "";
 static char saved_pass[65] = "";
+static wifi_mgr_mode_change_cb_t mode_change_cb = NULL;
 
 static void start_ap_mode(void);
 
@@ -67,6 +68,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             xEventGroupSetBits(wifi_event_group, WIFI_AP_STARTED_BIT);
             current_mode = WIFI_MGR_MODE_AP;
             strncpy(ip_str, AP_IP, sizeof(ip_str));
+            if (mode_change_cb) mode_change_cb(WIFI_MGR_MODE_AP);
             break;
 
         case WIFI_EVENT_AP_STACONNECTED: {
@@ -87,6 +89,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "STA got IP: %s", ip_str);
         current_mode = WIFI_MGR_MODE_STA;
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+        if (mode_change_cb) mode_change_cb(WIFI_MGR_MODE_STA);
     }
 }
 
@@ -266,4 +269,26 @@ esp_err_t wifi_mgr_start_ap(void)
 
     start_ap_mode();
     return ESP_OK;
+}
+
+esp_err_t wifi_mgr_wait_ready(uint32_t timeout_ms)
+{
+    if (!wifi_event_group) return ESP_ERR_INVALID_STATE;
+
+    EventBits_t bits = xEventGroupWaitBits(wifi_event_group,
+        WIFI_CONNECTED_BIT | WIFI_AP_STARTED_BIT,
+        pdFALSE, pdFALSE, pdMS_TO_TICKS(timeout_ms));
+
+    if (bits & (WIFI_CONNECTED_BIT | WIFI_AP_STARTED_BIT)) {
+        ESP_LOGI(TAG, "WiFi ready (mode=%s)", (bits & WIFI_CONNECTED_BIT) ? "STA" : "AP");
+        return ESP_OK;
+    }
+
+    ESP_LOGW(TAG, "WiFi not ready after %lu ms", (unsigned long)timeout_ms);
+    return ESP_ERR_TIMEOUT;
+}
+
+void wifi_mgr_set_mode_change_cb(wifi_mgr_mode_change_cb_t cb)
+{
+    mode_change_cb = cb;
 }
