@@ -61,8 +61,10 @@
 // send serial-state notifications to the host. Line coding and DTR/RTS
 // still work via control transfers on EP0.
 #define TUD_CDC_DESC_NO_NOTIF(_itfnum, _stridx, _ep_out, _ep_in, _epsize) \
+    /* Interface Association Descriptor (IAD) - groups comm + data interfaces */ \
+    8, TUSB_DESC_INTERFACE_ASSOCIATION, _itfnum, 2, TUSB_CLASS_CDC, CDC_COMM_SUBCLASS_ABSTRACT_CONTROL_MODEL, CDC_COMM_PROTOCOL_ATCOMMAND, 0, \
     /* CDC Communication Interface */ \
-    9, TUSB_DESC_INTERFACE, _itfnum, 0, 0, TUSB_CLASS_CDC, CDC_COMM_SUBCLASS_ABSTRACT_CONTROL_MODEL, CDC_COMM_PROTOCOL_NONE, _stridx, \
+    9, TUSB_DESC_INTERFACE, _itfnum, 0, 0, TUSB_CLASS_CDC, CDC_COMM_SUBCLASS_ABSTRACT_CONTROL_MODEL, CDC_COMM_PROTOCOL_ATCOMMAND, _stridx, \
     /* CDC Header */ \
     5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_HEADER, U16_TO_U8S_LE(0x0120), \
     /* CDC Call Management */ \
@@ -79,8 +81,8 @@
     7, TUSB_DESC_ENDPOINT, _ep_in, TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0
 
 // Size of one CDC descriptor without notification EP:
-//   Interface(9) + Header(5) + Call Mgmt(5) + ACM(4) + Union(5) + Data Interface(9) + EP OUT(7) + EP IN(7) = 51
-#define TUD_CDC_DESC_NO_NOTIF_LEN  51
+//   IAD(8) + Interface(9) + Header(5) + Call Mgmt(5) + ACM(4) + Union(5) + Data Interface(9) + EP OUT(7) + EP IN(7) = 59
+#define TUD_CDC_DESC_NO_NOTIF_LEN  59
 
 #define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + 6 * TUD_CDC_DESC_NO_NOTIF_LEN)
 
@@ -106,7 +108,7 @@ const tusb_desc_device_t cdc_device_descriptor = {
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x1234,
     .idProduct          = 0x5678,
-    .bcdDevice          = 0x0200,
+    .bcdDevice          = 0x0210,
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
     .iSerialNumber      = STRID_SERIAL,
@@ -115,7 +117,7 @@ const tusb_desc_device_t cdc_device_descriptor = {
 
 // Bulk endpoint max packet sizes per USB speed
 #define CDC_BULK_FS_EP_SIZE  64   // FullSpeed max
-#define CDC_BULK_HS_EP_SIZE  512  // HighSpeed max
+#define CDC_BULK_HS_EP_SIZE  512  // HighSpeed: must be 512 per USB 2.0 spec
 
 // FullSpeed configuration descriptor (used when device operates at FS)
 const uint8_t cdc_fs_config_descriptor[] = {

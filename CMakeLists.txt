@@ -15,12 +15,26 @@ add_custom_command(
 )
 add_custom_target(patch_cdc_count ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.cdc_count_patched)
 
-# Make all ESP-IDF components depend on the patch
-# This ensures sdkconfig.h is patched before any compilation
+# Patch DWC2 RX FIFO allocation: use single-buffered (1x) instead of double-buffered (2x).
+# ESP32-P4 HS DWC2 has only 4096 bytes of FIFO. With the default 2x RX buffer, 6 CDC ports
+# with 512-byte HS bulk endpoints exceed the FIFO budget by 96 words. Single-buffered RX
+# is sufficient for CDC serial data — the DMA drains packets fast enough.
+set(DCD_DWC2_FILE ${CMAKE_CURRENT_SOURCE_DIR}/managed_components/espressif__tinyusb/src/portable/synopsys/dwc2/dcd_dwc2.c)
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/config/.dfifo_patched
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/patch_dfifo.py ${DCD_DWC2_FILE}
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/config/.dfifo_patched
+    DEPENDS ${DCD_DWC2_FILE}
+    COMMENT "Patching DWC2 RX FIFO to single-buffered for 6 CDC HS bulk endpoints"
+)
+add_custom_target(patch_dfifo ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.dfifo_patched)
+
+# Make all ESP-IDF components depend on both patches
+# This ensures sdkconfig.h and dcd_dwc2.c are patched before any compilation
 idf_build_get_property(build_components BUILD_COMPONENTS)
 foreach(comp ${build_components})
     if(TARGET __idf_${comp})
-        add_dependencies(__idf_${comp} patch_cdc_count)
+        add_dependencies(__idf_${comp} patch_cdc_count patch_dfifo)
     endif()
 endforeach()
 
