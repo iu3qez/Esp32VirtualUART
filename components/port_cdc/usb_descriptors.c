@@ -1,5 +1,6 @@
 #include "tusb.h"
 #include "tinyusb.h"
+#include "sdkconfig.h"
 
 // ----- USB Descriptor Configuration for Composite 2x CDC-ACM Device -----
 //
@@ -85,6 +86,14 @@ const char *cdc_string_descriptor[] = {
     [STRID_MANUFACTURER] = "VirtualUART",
     [STRID_PRODUCT]      = "ESP32 Virtual UART",
     [STRID_SERIAL]       = "000001",
+#if defined(CONFIG_VUART_CDC_DEBUG_PORT) && CONFIG_VUART_CDC_DEBUG_INDEX == 0
+    [STRID_CDC0]         = "ESP32 Debug Console",
+    [STRID_CDC1]         = "Virtual UART Port 1",
+#elif defined(CONFIG_VUART_CDC_DEBUG_PORT) && CONFIG_VUART_CDC_DEBUG_INDEX == 1
+    [STRID_CDC0]         = "Virtual UART Port 0",
+    [STRID_CDC1]         = "ESP32 Debug Console",
+#else
     [STRID_CDC0]         = "Virtual UART Port 0",
     [STRID_CDC1]         = "Virtual UART Port 1",
+#endif
 };

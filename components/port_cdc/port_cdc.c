@@ -5,6 +5,10 @@
 #include "esp_log.h"
 #include <string.h>
 
+#ifdef CONFIG_VUART_CDC_DEBUG_PORT
+#include "tusb_console.h"
+#endif
+
 static const char *TAG = "port_cdc";
 
 // External descriptors from usb_descriptors.c
@@ -181,6 +185,36 @@ esp_err_t port_cdc_init(void)
 
     // Initialize each CDC-ACM port
     for (int i = 0; i < CDC_PORT_COUNT; i++) {
+#ifdef CONFIG_VUART_CDC_DEBUG_PORT
+        // Debug port: init as CDC-ACM but redirect console, don't register for routing
+        if (i == CDC_DEBUG_INDEX) {
+            tinyusb_config_cdcacm_t acm_cfg = {
+                .usb_dev = TINYUSB_USBDEV_0,
+                .cdc_port = i,
+                .rx_unread_buf_sz = 256,
+                .callback_rx = NULL,
+                .callback_rx_wanted_char = NULL,
+                .callback_line_state_changed = NULL,
+                .callback_line_coding_changed = NULL,
+            };
+
+            ret = tusb_cdc_acm_init(&acm_cfg);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "CDC-ACM %d (debug) init failed: %s", i, esp_err_to_name(ret));
+                return ret;
+            }
+
+            ret = esp_tusb_init_console(i);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Console redirect to CDC%d failed: %s", i, esp_err_to_name(ret));
+                return ret;
+            }
+
+            ESP_LOGI(TAG, "CDC%d initialized as debug console", i);
+            continue;
+        }
+#endif
+
         cdc_priv[i].cdc_index = i;
 
         char name[PORT_NAME_MAX];
@@ -238,5 +272,10 @@ port_t *port_cdc_get(int cdc_index)
     if (cdc_index < 0 || cdc_index >= CDC_PORT_COUNT) {
         return NULL;
     }
+#ifdef CONFIG_VUART_CDC_DEBUG_PORT
+    if (cdc_index == CDC_DEBUG_INDEX) {
+        return NULL;  // Debug port is not available for routing
+    }
+#endif
     return &cdc_ports[cdc_index];
 }

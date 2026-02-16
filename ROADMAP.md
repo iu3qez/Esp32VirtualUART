@@ -1,12 +1,24 @@
 # ESP32 Virtual UART - Roadmap
 
+## Vision
+**End goal:** All USB-CDC virtual ports dedicated to virtual UART routing (no debug port consumed).
+Phase 1 provides 2 CDC-ACM ports. The debug console CDC port is a build-time feature
+(`CONFIG_VUART_CDC_DEBUG_PORT`) — when disabled, all CDC ports are available for the project.
+
 ## Current Focus
-**Phase 1-7 implemented, testing and stabilization**
-- All major components built (USB CDC, UART, TCP, routing, config, WiFi, web server, frontend)
-- Ready for hardware testing and integration validation
-- Started: 2026-02-13
+
+**Frontend UX polish and mobile responsive layout**
+- Started: 2026-02-16
+
+
 
 ## Completed
+- [x] TCP client/server stress testing (2026-02-16)
+- [x] Baud rate conversion validation (2026-02-16)
+- [x] Signal line routing (DTR, RTS, CTS, DSR) end-to-end testing (2026-02-16)
+- [x] Hardware testing on ESP32-S3-DevKitC (2026-02-16)
+- [x] CDC debug console as build feature — CDC0 default debug, toggleable via menuconfig (2026-02-16)
+- [x] Phase 1-7 implemented, testing and stabilization (2026-02-16)
 - [x] Optimize sdkconfig for ESP32-S3 performance (240MHz, 16MB flash, 8MB PSRAM) (2026-02-16) `53239f5`
 - [x] Add WiFi STA settings UI and fix config save race condition (2026-02-16) `9c99b79`
 - [x] Add frontend build target, fix docs, add project onboarding files (2026-02-16) `ebb33c0`
@@ -20,11 +32,7 @@
 - [x] AP mode fix (2026-02-16)
 
 ## Planned
-- [ ] Hardware testing on ESP32-S3-DevKitC (high priority)
-- [ ] Signal line routing (DTR, RTS, CTS, DSR) end-to-end testing
-- [ ] Baud rate conversion validation
-- [ ] TCP client/server stress testing
-- [ ] Frontend UX polish and mobile responsive layout
+- [ ] Phase 8: USB CDC-ACM composite device with all available virtual COM ports
 - [ ] OTA firmware update support (future)
 
 ## Recent Planning Sessions
