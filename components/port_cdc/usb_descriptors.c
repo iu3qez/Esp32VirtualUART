@@ -1,38 +1,88 @@
 #include "tusb.h"
 #include "tinyusb.h"
-#include "sdkconfig.h"
 
-// ----- USB Descriptor Configuration for Composite 2x CDC-ACM Device -----
+// ----- USB Descriptor Configuration for Composite 6x CDC-ACM Device -----
 //
-// ESP32-S3 USB-OTG has 6 device endpoints:
-//   5 bidirectional (IN+OUT) + 1 IN-only
-//   EP0 reserved for control
+// ESP32-P4 HS USB (DWC2) has 16 endpoints:
+//   EP0 reserved for control, 8 IN + 8 OUT available
 //
-// Endpoint allocation:
-//   CDC0: EP1 IN (notification), EP2 OUT (data), EP2 IN (data)
-//   CDC1: EP3 IN (notification), EP4 OUT (data), EP4 IN (data)
-//   Total: 4 bidirectional EPs + 2 IN-only (notifications) = fits within limits
+// To fit 6 CDC ports we omit notification (interrupt IN) endpoints.
+// Each CDC uses only bulk IN + bulk OUT (2 EPs per port).
+//   CDC0: EP1 OUT + EP1 IN
+//   CDC1: EP2 OUT + EP2 IN
+//   CDC2: EP3 OUT + EP3 IN
+//   CDC3: EP4 OUT + EP4 IN
+//   CDC4: EP5 OUT + EP5 IN
+//   CDC5: EP6 OUT + EP6 IN
+//   Total: 6 IN + 6 OUT = 12 endpoints (fits in 16)
 //
-// Interface allocation:
-//   Interface 0: CDC0 Communication (Abstract Control Model)
-//   Interface 1: CDC0 Data
-//   Interface 2: CDC1 Communication
-//   Interface 3: CDC1 Data
+// Interface allocation (2 per CDC = 12 total):
+//   Interface 0+1:   CDC0
+//   Interface 2+3:   CDC1
+//   Interface 4+5:   CDC2
+//   Interface 6+7:   CDC3
+//   Interface 8+9:   CDC4
+//   Interface 10+11: CDC5
 
-#define EPNUM_CDC0_NOTIF    0x81    // EP1 IN
-#define EPNUM_CDC0_OUT      0x02    // EP2 OUT
-#define EPNUM_CDC0_IN       0x82    // EP2 IN
-#define EPNUM_CDC1_NOTIF    0x83    // EP3 IN
-#define EPNUM_CDC1_OUT      0x04    // EP4 OUT
-#define EPNUM_CDC1_IN       0x84    // EP4 IN
+// Endpoint numbers
+#define EPNUM_CDC0_OUT  0x01
+#define EPNUM_CDC0_IN   0x81
+#define EPNUM_CDC1_OUT  0x02
+#define EPNUM_CDC1_IN   0x82
+#define EPNUM_CDC2_OUT  0x03
+#define EPNUM_CDC2_IN   0x83
+#define EPNUM_CDC3_OUT  0x04
+#define EPNUM_CDC3_IN   0x84
+#define EPNUM_CDC4_OUT  0x05
+#define EPNUM_CDC4_IN   0x85
+#define EPNUM_CDC5_OUT  0x06
+#define EPNUM_CDC5_IN   0x86
 
+// Interface numbers
 #define ITF_NUM_CDC0        0
 #define ITF_NUM_CDC0_DATA   1
 #define ITF_NUM_CDC1        2
 #define ITF_NUM_CDC1_DATA   3
-#define ITF_NUM_TOTAL       4
+#define ITF_NUM_CDC2        4
+#define ITF_NUM_CDC2_DATA   5
+#define ITF_NUM_CDC3        6
+#define ITF_NUM_CDC3_DATA   7
+#define ITF_NUM_CDC4        8
+#define ITF_NUM_CDC4_DATA   9
+#define ITF_NUM_CDC5        10
+#define ITF_NUM_CDC5_DATA   11
+#define ITF_NUM_TOTAL       12
 
-#define CONFIG_TOTAL_LEN    (TUD_CONFIG_DESC_LEN + 2 * TUD_CDC_DESC_LEN)
+// CDC descriptor without notification endpoint (saves 1 IN EP per port)
+// This is a custom macro based on TUD_CDC_DESCRIPTOR but with notif EP = 0
+// and notif EP max size = 0, effectively disabling the interrupt endpoint.
+//
+// TinyUSB's CDC class driver tolerates epn_notif = 0 — it simply won't
+// send serial-state notifications to the host. Line coding and DTR/RTS
+// still work via control transfers on EP0.
+#define TUD_CDC_DESC_NO_NOTIF(_itfnum, _stridx, _ep_out, _ep_in, _epsize) \
+    /* CDC Communication Interface */ \
+    9, TUSB_DESC_INTERFACE, _itfnum, 0, 0, TUSB_CLASS_CDC, CDC_COMM_SUBCLASS_ABSTRACT_CONTROL_MODEL, CDC_COMM_PROTOCOL_NONE, _stridx, \
+    /* CDC Header */ \
+    5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_HEADER, U16_TO_U8S_LE(0x0120), \
+    /* CDC Call Management */ \
+    5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_CALL_MANAGEMENT, 0, (uint8_t)((_itfnum) + 1), \
+    /* CDC ACM */ \
+    4, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_ABSTRACT_CONTROL_MANAGEMENT, 0x02, \
+    /* CDC Union */ \
+    5, TUSB_DESC_CS_INTERFACE, CDC_FUNC_DESC_UNION, _itfnum, (uint8_t)((_itfnum) + 1), \
+    /* CDC Data Interface */ \
+    9, TUSB_DESC_INTERFACE, (uint8_t)((_itfnum) + 1), 0, 2, TUSB_CLASS_CDC_DATA, 0, 0, 0, \
+    /* Data OUT endpoint */ \
+    7, TUSB_DESC_ENDPOINT, _ep_out, TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0, \
+    /* Data IN endpoint */ \
+    7, TUSB_DESC_ENDPOINT, _ep_in, TUSB_XFER_BULK, U16_TO_U8S_LE(_epsize), 0
+
+// Size of one CDC descriptor without notification EP:
+//   Interface(9) + Header(5) + Call Mgmt(5) + ACM(4) + Union(5) + Data Interface(9) + EP OUT(7) + EP IN(7) = 51
+#define TUD_CDC_DESC_NO_NOTIF_LEN  51
+
+#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + 6 * TUD_CDC_DESC_NO_NOTIF_LEN)
 
 // String descriptor indices
 enum {
@@ -42,6 +92,10 @@ enum {
     STRID_SERIAL,
     STRID_CDC0,
     STRID_CDC1,
+    STRID_CDC2,
+    STRID_CDC3,
+    STRID_CDC4,
+    STRID_CDC5,
 };
 
 // Device descriptor - Composite device (IAD)
@@ -56,44 +110,57 @@ const tusb_desc_device_t cdc_device_descriptor = {
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x1234,
     .idProduct          = 0x5678,
-    .bcdDevice          = 0x0100,
+    .bcdDevice          = 0x0200,
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
     .iSerialNumber      = STRID_SERIAL,
     .bNumConfigurations = 1,
 };
 
+// HS bulk endpoint max packet size = 512
+#define CDC_BULK_EP_SIZE  512
+
 // Configuration descriptor
 const uint8_t cdc_config_descriptor[] = {
     // Config descriptor
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
-                          TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
+                          TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
 
-    // CDC0: Interface 0+1, EP1 notify, EP2 data
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC0, STRID_CDC0,
-                       EPNUM_CDC0_NOTIF, 8,
-                       EPNUM_CDC0_OUT, EPNUM_CDC0_IN, 64),
+    // CDC0: Interface 0+1, EP1
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC0, STRID_CDC0,
+                          EPNUM_CDC0_OUT, EPNUM_CDC0_IN, CDC_BULK_EP_SIZE),
 
-    // CDC1: Interface 2+3, EP3 notify, EP4 data
-    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC1, STRID_CDC1,
-                       EPNUM_CDC1_NOTIF, 8,
-                       EPNUM_CDC1_OUT, EPNUM_CDC1_IN, 64),
+    // CDC1: Interface 2+3, EP2
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC1, STRID_CDC1,
+                          EPNUM_CDC1_OUT, EPNUM_CDC1_IN, CDC_BULK_EP_SIZE),
+
+    // CDC2: Interface 4+5, EP3
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC2, STRID_CDC2,
+                          EPNUM_CDC2_OUT, EPNUM_CDC2_IN, CDC_BULK_EP_SIZE),
+
+    // CDC3: Interface 6+7, EP4
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC3, STRID_CDC3,
+                          EPNUM_CDC3_OUT, EPNUM_CDC3_IN, CDC_BULK_EP_SIZE),
+
+    // CDC4: Interface 8+9, EP5
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC4, STRID_CDC4,
+                          EPNUM_CDC4_OUT, EPNUM_CDC4_IN, CDC_BULK_EP_SIZE),
+
+    // CDC5: Interface 10+11, EP6
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC5, STRID_CDC5,
+                          EPNUM_CDC5_OUT, EPNUM_CDC5_IN, CDC_BULK_EP_SIZE),
 };
 
 // String descriptors
 const char *cdc_string_descriptor[] = {
     [STRID_LANGID]       = (const char[]){0x09, 0x04},  // English (US)
     [STRID_MANUFACTURER] = "VirtualUART",
-    [STRID_PRODUCT]      = "ESP32 Virtual UART",
+    [STRID_PRODUCT]      = "ESP32-P4 Virtual UART",
     [STRID_SERIAL]       = "000001",
-#if defined(CONFIG_VUART_CDC_DEBUG_PORT) && CONFIG_VUART_CDC_DEBUG_INDEX == 0
-    [STRID_CDC0]         = "ESP32 Debug Console",
-    [STRID_CDC1]         = "Virtual UART Port 1",
-#elif defined(CONFIG_VUART_CDC_DEBUG_PORT) && CONFIG_VUART_CDC_DEBUG_INDEX == 1
-    [STRID_CDC0]         = "Virtual UART Port 0",
-    [STRID_CDC1]         = "ESP32 Debug Console",
-#else
     [STRID_CDC0]         = "Virtual UART Port 0",
     [STRID_CDC1]         = "Virtual UART Port 1",
-#endif
+    [STRID_CDC2]         = "Virtual UART Port 2",
+    [STRID_CDC3]         = "Virtual UART Port 3",
+    [STRID_CDC4]         = "Virtual UART Port 4",
+    [STRID_CDC5]         = "Virtual UART Port 5",
 };

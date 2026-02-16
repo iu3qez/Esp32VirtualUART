@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Hardware VSPE (Virtual Serial Port Emulator) replacement using ESP32-S3. Presents multiple USB CDC-ACM virtual COM ports to a host PC, with a Svelte web GUI for routing data between USB, UART, and TCP ports.
+Hardware VSPE (Virtual Serial Port Emulator) replacement using ESP32-P4. Presents 6 USB CDC-ACM virtual COM ports (HS USB) to a host PC, with a Svelte web GUI for routing data between USB, UART, and TCP ports. Target board: Guition JC-ESP32P4-M3-Dev with ESP32-C6 companion (WiFi via ESP-Hosted/SDIO) and IP101 Ethernet.
 
 ## ESP-IDF Setup
 
@@ -33,7 +33,7 @@ ESP-IDF v5.5.2 is installed at `/home/sf/esp/esp-idf`.
 . /home/sf/esp/esp-idf/export.sh 2>/dev/null && idf.py fullclean
 
 # Set target (only needed once or after fullclean)
-. /home/sf/esp/esp-idf/export.sh 2>/dev/null && idf.py set-target esp32s3
+. /home/sf/esp/esp-idf/export.sh 2>/dev/null && idf.py set-target esp32p4
 
 # Menuconfig
 . /home/sf/esp/esp-idf/export.sh 2>/dev/null && idf.py menuconfig
@@ -54,7 +54,8 @@ Esp32VirtualUART/
 │   ├── port_tcp/               # TCP socket port (Phase 5)
 │   ├── routing/                # Route engine + signal router (Phase 3)
 │   ├── config_store/           # NVS persistence (Phase 4)
-│   ├── wifi_mgr/               # WiFi STA management (Phase 5)
+│   ├── wifi_mgr/               # WiFi STA via ESP32-C6 companion (ESP-Hosted)
+│   ├── ethernet_mgr/           # Ethernet (IP101 PHY, internal EMAC)
 │   ├── dns_server/             # Captive portal DNS redirector (AP mode)
 │   ├── status_led/             # RGB LED status indicator
 │   └── web_server/             # HTTP + WebSocket + REST API (Phase 6)
@@ -64,17 +65,21 @@ Esp32VirtualUART/
 
 ## Key Technical Constraints
 
-- **ESP32-S3 USB endpoint limit:** Max 2 CDC-ACM ports (6 endpoints total, 3 per CDC)
-- **Target:** ESP32-S3 only (uses USB-OTG peripheral)
+- **ESP32-P4 HS USB:** 6 CDC-ACM ports (no notification EPs, bulk IN+OUT only, 12 of 16 EPs used)
+- **Target:** ESP32-P4 (dual-core RISC-V, 360MHz, HS USB)
+- **Board:** Guition JC-ESP32P4-M3-Dev (C6 companion on SDIO, IP101 Ethernet)
 - **Firmware framework:** ESP-IDF v5.x (C), NOT Arduino
-- **USB stack:** TinyUSB via `espressif/esp_tinyusb` component
+- **USB stack:** TinyUSB via `espressif/esp_tinyusb` component (HS port)
+- **WiFi:** Via ESP32-C6 companion using ESP-Hosted (SDIO transport)
+- **Ethernet:** Internal EMAC + IP101 PHY (MDC=31, MDIO=52, power=51, CLK=50)
 - **Filesystem:** LittleFS via `joltwallet/littlefs: "^1.14.0"` (SPIFFS deprecated)
-- **RGB LED:** Addressable WS2812 on GPIO48 (DevKitC) via `espressif/led_strip`
+- **RGB LED:** Configurable GPIO via Kconfig (`CONFIG_VUART_STATUS_LED_GPIO`)
 
 ## ESP-IDF Component Dependencies
 
 Components use `idf_component.yml` for managed dependencies:
 - `port_cdc/idf_component.yml` → `espressif/esp_tinyusb: "^1.7.0"`
+- `wifi_mgr/idf_component.yml` → `espressif/esp_wifi_remote`, `espressif/esp_hosted`, `espressif/esp-extconn`
 - `status_led/idf_component.yml` → `espressif/led_strip: "^2.5.0"`
 - `web_server/idf_component.yml` → `joltwallet/littlefs: "^1.14.0"`
 

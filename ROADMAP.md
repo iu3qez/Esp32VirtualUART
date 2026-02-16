@@ -1,18 +1,21 @@
 # ESP32 Virtual UART - Roadmap
 
 ## Vision
-**End goal:** All USB-CDC virtual ports dedicated to virtual UART routing (no debug port consumed).
-Phase 1 provides 2 CDC-ACM ports. The debug console CDC port is a build-time feature
-(`CONFIG_VUART_CDC_DEBUG_PORT`) — when disabled, all CDC ports are available for the project.
+**End goal:** 6 USB-CDC virtual ports dedicated to virtual UART routing on ESP32-P4.
+Migrated from ESP32-S3 (2 CDC ports, FS USB) to ESP32-P4 (6 CDC ports, HS USB).
+Target board: Guition JC-ESP32P4-M3-Dev with ESP32-C6 companion (WiFi via ESP-Hosted) and IP101 Ethernet.
 
 ## Current Focus
 
-**Frontend UX polish and mobile responsive layout**
-- Started: 2026-02-16
-
-
+_No current goal. Next planned item will be promoted on next planning session._
 
 ## Completed
+- [x] ESP32-P4 migration — build verification and hardware testing (2026-02-16)
+- [x] Migrate from ESP32-S3 to ESP32-P4: 6 CDC ports, HS USB, ESP-Hosted WiFi, IP101 Ethernet (2026-02-16)
+- [x] OTA firmware update support (2026-02-16)
+- [x] Phase 8: USB CDC-ACM composite device with all available virtual COM ports (2026-02-16)
+- [x] Frontend UX polish and mobile responsive layout (2026-02-16)
+- [x] Add CDC debug console as build feature (CONFIG_VUART_CDC_DEBUG_PORT) (2026-02-16) `3928c01`
 - [x] TCP client/server stress testing (2026-02-16)
 - [x] Baud rate conversion validation (2026-02-16)
 - [x] Signal line routing (DTR, RTS, CTS, DSR) end-to-end testing (2026-02-16)
@@ -32,8 +35,6 @@ Phase 1 provides 2 CDC-ACM ports. The debug console CDC port is a build-time fea
 - [x] AP mode fix (2026-02-16)
 
 ## Planned
-- [ ] Phase 8: USB CDC-ACM composite device with all available virtual COM ports
-- [ ] OTA firmware update support (future)
 
 ## Recent Planning Sessions
 _Planning sessions will be recorded here automatically._

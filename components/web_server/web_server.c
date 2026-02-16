@@ -104,7 +104,7 @@ static bool littlefs_mounted = false;
 // Serve static files from LittleFS
 static esp_err_t static_file_handler(httpd_req_t *req)
 {
-    char filepath[128];
+    char filepath[256];
     const char *uri = req->uri;
 
     // Strip query string
@@ -118,15 +118,17 @@ static esp_err_t static_file_handler(httpd_req_t *req)
         snprintf(filepath, sizeof(filepath), "/littlefs/www%.*s", (int)uri_len, uri);
     }
 
-    // Check if gzipped version exists
-    char gz_path[136];
-    snprintf(gz_path, sizeof(gz_path), "%s.gz", filepath);
+    // Check if gzipped version exists (".gz" = 3 chars + null)
+    char gz_path[260];
+    int gz_len_written = snprintf(gz_path, sizeof(gz_path), "%s.gz", filepath);
+    (void)gz_len_written;
 
     struct stat st;
     bool use_gzip = false;
     if (stat(gz_path, &st) == 0) {
         use_gzip = true;
-        strncpy(filepath, gz_path, sizeof(filepath) - 1);
+        memcpy(filepath, gz_path, sizeof(filepath) - 1);
+        filepath[sizeof(filepath) - 1] = '\0';
     } else if (stat(filepath, &st) != 0) {
         // File not found - SPA fallback: serve index.html
         snprintf(filepath, sizeof(filepath), "/littlefs/www/index.html");
@@ -152,10 +154,11 @@ static esp_err_t static_file_handler(httpd_req_t *req)
     const char *content_type = get_content_type(use_gzip ? filepath + strlen(filepath) - 3 - 1 : filepath);
     // For gz files, derive content type from the original extension
     if (use_gzip) {
-        char orig_path[128];
+        char orig_path[256] = {0};
         size_t gz_len = strlen(filepath);
-        strncpy(orig_path, filepath, gz_len - 3); // strip ".gz"
-        orig_path[gz_len - 3] = '\0';
+        size_t orig_len = gz_len > 3 ? gz_len - 3 : 0;
+        if (orig_len >= sizeof(orig_path)) orig_len = sizeof(orig_path) - 1;
+        memcpy(orig_path, filepath, orig_len);
         content_type = get_content_type(orig_path);
         httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     }

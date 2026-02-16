@@ -1,24 +1,19 @@
 menu "Virtual UART Configuration"
 
-    config VUART_CDC_DEBUG_PORT
-        bool "Dedicate one CDC port to ESP debug console"
+    config VUART_STATUS_LED_GPIO
+        int "Status LED GPIO number"
+        default 48
+        help
+            GPIO number for the addressable RGB LED (WS2812).
+            Default 48 is for ESP32-S3-DevKitC. Set to your board's LED GPIO.
+            Set to -1 to disable the status LED.
+
+    config VUART_ETHERNET_ENABLED
+        bool "Enable Ethernet (IP101 PHY)"
         default y
         help
-            When enabled, one USB CDC-ACM port is used for ESP-IDF
-            console output (ESP_LOG, printf, etc.) instead of being
-            available for virtual UART routing.
-
-            Disable this for production to make all CDC ports available
-            for data routing.
-
-    config VUART_CDC_DEBUG_INDEX
-        int "CDC port index used for debug console (0 or 1)"
-        depends on VUART_CDC_DEBUG_PORT
-        range 0 1
-        default 0
-        help
-            Which CDC-ACM port to use as the debug console.
-            0 = CDC0 (first virtual COM port)
-            1 = CDC1 (second virtual COM port)
+            Enable Ethernet support using the internal EMAC and IP101 PHY.
+            This is for the Guition JC-ESP32P4-M3-Dev board with IP101.
+            Disable if your board does not have Ethernet hardware.
 
 endmenu

@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "sdkconfig.h"
 #include "port.h"
 #include "port_registry.h"
 #include "port_cdc.h"
@@ -15,11 +16,11 @@
 #include "web_server.h"
 #include "dns_server.h"
 #include "status_led.h"
+#ifdef CONFIG_VUART_ETHERNET_ENABLED
+#include "ethernet_mgr.h"
+#endif
 
 static const char *TAG = "main";
-
-// RGB LED GPIO - adjust for your board
-#define STATUS_LED_GPIO     GPIO_NUM_48
 
 system_config_t sys_config;
 
@@ -43,11 +44,13 @@ static void on_wifi_mode_change(wifi_mgr_mode_t new_mode)
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "ESP32 Virtual UART starting...");
+    ESP_LOGI(TAG, "ESP32-P4 Virtual UART starting...");
 
     // 1. Init status LED first (visual feedback during boot)
-    status_led_init(STATUS_LED_GPIO);
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
+    status_led_init(CONFIG_VUART_STATUS_LED_GPIO);
     status_led_set_state(LED_STATE_BOOTING);
+#endif
 
     // 2. Init NVS flash
     esp_err_t ret = nvs_flash_init();
@@ -58,7 +61,9 @@ void app_main(void)
     }
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "NVS flash init failed: %s", esp_err_to_name(ret));
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
         status_led_set_state(LED_STATE_ERROR);
+#endif
         return;
     }
 
@@ -70,19 +75,23 @@ void app_main(void)
     ret = port_registry_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Port registry init failed");
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
         status_led_set_state(LED_STATE_ERROR);
+#endif
         return;
     }
 
-    // 5. Init CDC ports (USB virtual COM ports) - IDs 0, 1
+    // 5. Init CDC ports (USB virtual COM ports) - IDs 0-5
     ret = port_cdc_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "CDC init failed: %s", esp_err_to_name(ret));
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
         status_led_set_state(LED_STATE_ERROR);
+#endif
         return;
     }
 
-    // 6. Init UART ports - IDs 2, 3
+    // 6. Init UART ports - IDs 6, 7
     for (int i = 0; i < 2; i++) {
         uart_pin_config_t pin_cfg = {
             .uart_num = sys_config.uart_configs[i].uart_num,
@@ -95,22 +104,32 @@ void app_main(void)
             .dcd_pin  = sys_config.uart_configs[i].dcd_pin,
             .ri_pin   = sys_config.uart_configs[i].ri_pin,
         };
-        ret = port_uart_init(2 + i, &pin_cfg);
+        ret = port_uart_init(6 + i, &pin_cfg);
         if (ret != ESP_OK) {
             ESP_LOGW(TAG, "UART%d init failed: %s (continuing)", pin_cfg.uart_num, esp_err_to_name(ret));
         }
     }
 
-    // 7. Init WiFi
+    // 7. Init WiFi (via ESP32-C6 companion over SDIO)
     // If STA credentials exist: tries STA, falls back to AP after retries
     // If no credentials: starts AP mode immediately ("VirtualUART" open network)
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
     status_led_set_state(LED_STATE_WIFI_CONNECTING);
+#endif
     wifi_mgr_init(
         strlen(sys_config.wifi_ssid) > 0 ? sys_config.wifi_ssid : NULL,
         strlen(sys_config.wifi_pass) > 0 ? sys_config.wifi_pass : NULL
     );
 
-    // 8. Init TCP ports - IDs 4-7
+    // 8. Init Ethernet (IP101 PHY)
+#ifdef CONFIG_VUART_ETHERNET_ENABLED
+    ret = ethernet_mgr_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Ethernet init failed: %s (continuing without Ethernet)", esp_err_to_name(ret));
+    }
+#endif
+
+    // 9. Init TCP ports - IDs 8-11
     for (int i = 0; i < 4; i++) {
         if (sys_config.tcp_configs[i].port > 0) {
             tcp_port_config_t tcp_cfg = {
@@ -118,22 +137,24 @@ void app_main(void)
                 .is_server = sys_config.tcp_configs[i].is_server,
             };
             strncpy(tcp_cfg.host, sys_config.tcp_configs[i].host, sizeof(tcp_cfg.host) - 1);
-            port_tcp_init(4 + i, &tcp_cfg);
+            port_tcp_init(8 + i, &tcp_cfg);
         }
     }
 
-    // 9. Init routing engine
+    // 10. Init routing engine
     ret = route_engine_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Route engine init failed");
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
         status_led_set_state(LED_STATE_ERROR);
+#endif
         return;
     }
 
-    // 10. Start signal router
+    // 11. Start signal router
     signal_router_init();
 
-    // 11. Restore saved routes
+    // 12. Restore saved routes
     for (int i = 0; i < sys_config.route_count && i < ROUTE_MAX_COUNT; i++) {
         route_t r = {0};
         r.type = sys_config.routes[i].type;
@@ -149,19 +170,19 @@ void app_main(void)
         }
     }
 
-    // 12. Wait for WiFi to be ready before starting web server
+    // 13. Wait for WiFi to be ready before starting web server
     ret = wifi_mgr_wait_ready(30000);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "WiFi not ready, starting web server anyway");
     }
 
-    // 13. Start web server (HTTP + WebSocket + static files)
+    // 14. Start web server (HTTP + WebSocket + static files)
     ret = web_server_start();
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "Web server start failed: %s (continuing)", esp_err_to_name(ret));
     }
 
-    // Register callback to restart web server on WiFi mode changes (e.g., STA-to-AP fallback)
+    // Register callback to restart web server on WiFi mode changes
     wifi_mgr_set_mode_change_cb(on_wifi_mode_change);
 
     // Start DNS server if already in AP mode (captive portal)
@@ -170,8 +191,10 @@ void app_main(void)
     }
 
     // Boot complete
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
     status_led_set_state(LED_STATE_READY);
-    ESP_LOGI(TAG, "ESP32 Virtual UART ready! %d ports, %d routes",
+#endif
+    ESP_LOGI(TAG, "ESP32-P4 Virtual UART ready! %d ports, %d routes",
              port_registry_count(), route_active_count());
 
     // Log registered ports
@@ -199,7 +222,9 @@ void app_main(void)
         for (int i = 0; i < rcount; i++) {
             if (active_routes[i].bytes_fwd_src_to_dst > 0 || active_routes[i].bytes_fwd_dst_to_src > 0) {
                 any_data_flowing = true;
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
                 status_led_set_activity();
+#endif
                 web_server_notify_data_flow(active_routes[i].id,
                     active_routes[i].bytes_fwd_src_to_dst,
                     active_routes[i].bytes_fwd_dst_to_src);
@@ -207,6 +232,7 @@ void app_main(void)
             }
         }
 
+#if CONFIG_VUART_STATUS_LED_GPIO >= 0
         led_state_t current = status_led_get_state();
         bool wifi_connected = wifi_mgr_is_connected();
 
@@ -225,6 +251,7 @@ void app_main(void)
                 status_led_set_state(LED_STATE_READY);
             }
         }
+#endif
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }

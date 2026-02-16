@@ -5,10 +5,6 @@
 #include "esp_log.h"
 #include <string.h>
 
-#ifdef CONFIG_VUART_CDC_DEBUG_PORT
-#include "tusb_console.h"
-#endif
-
 static const char *TAG = "port_cdc";
 
 // External descriptors from usb_descriptors.c
@@ -18,7 +14,7 @@ extern const char *cdc_string_descriptor[];
 
 // Private data for each CDC port
 typedef struct {
-    int cdc_index;  // TinyUSB CDC port index (0 or 1)
+    int cdc_index;  // TinyUSB CDC port index (0-5)
 } cdc_priv_t;
 
 static port_t cdc_ports[CDC_PORT_COUNT];
@@ -65,9 +61,6 @@ static int cdc_get_signals(port_t *port, uint32_t *signals)
 
 static int cdc_set_signals(port_t *port, uint32_t signals)
 {
-    // For CDC, we can notify the host of DSR/DCD/RI changes
-    // via tud_cdc_n_set_serial_state() (TinyUSB low-level API)
-    // For now, just store the signal state
     port->signals = (port->signals & (SIGNAL_DTR | SIGNAL_RTS)) | (signals & ~(SIGNAL_DTR | SIGNAL_RTS));
     return 0;
 }
@@ -110,7 +103,6 @@ static void cdc_rx_callback(int itf, cdcacm_event_t *event)
 
     esp_err_t ret = tinyusb_cdcacm_read(itf, buf, sizeof(buf), &rx_size);
     if (ret == ESP_OK && rx_size > 0) {
-        // Push received data into port's stream buffer
         size_t sent = xStreamBufferSend(port->rx_buf, buf, rx_size, 0);
         if (sent < rx_size) {
             ESP_LOGW(TAG, "%s: rx buffer overflow, dropped %d bytes",
@@ -128,7 +120,6 @@ static void cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)
     int dtr = event->line_state_changed_data.dtr;
     int rts = event->line_state_changed_data.rts;
 
-    // Update signal state from host
     uint32_t new_signals = port->signals & ~(SIGNAL_DTR | SIGNAL_RTS);
     if (dtr) new_signals |= SIGNAL_DTR;
     if (rts) new_signals |= SIGNAL_RTS;
@@ -164,14 +155,14 @@ static void cdc_line_coding_changed_callback(int itf, cdcacm_event_t *event)
 
 esp_err_t port_cdc_init(void)
 {
-    ESP_LOGI(TAG, "Initializing TinyUSB CDC with %d ports", CDC_PORT_COUNT);
+    ESP_LOGI(TAG, "Initializing TinyUSB CDC with %d ports (HS USB)", CDC_PORT_COUNT);
 
     // Install TinyUSB driver with custom descriptors
     const tinyusb_config_t tusb_cfg = {
         .device_descriptor = &cdc_device_descriptor,
         .configuration_descriptor = cdc_config_descriptor,
         .string_descriptor = cdc_string_descriptor,
-        .string_descriptor_count = 6,
+        .string_descriptor_count = 10,  // LANGID + MFR + PROD + SER + 6 CDC
         .external_phy = false,
         .self_powered = false,
         .vbus_monitor_io = -1,
@@ -185,46 +176,12 @@ esp_err_t port_cdc_init(void)
 
     // Initialize each CDC-ACM port
     for (int i = 0; i < CDC_PORT_COUNT; i++) {
-#ifdef CONFIG_VUART_CDC_DEBUG_PORT
-        // Debug port: init as CDC-ACM but redirect console, don't register for routing
-        if (i == CDC_DEBUG_INDEX) {
-            tinyusb_config_cdcacm_t acm_cfg = {
-                .usb_dev = TINYUSB_USBDEV_0,
-                .cdc_port = i,
-                .rx_unread_buf_sz = 256,
-                .callback_rx = NULL,
-                .callback_rx_wanted_char = NULL,
-                .callback_line_state_changed = NULL,
-                .callback_line_coding_changed = NULL,
-            };
-
-            ret = tusb_cdc_acm_init(&acm_cfg);
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "CDC-ACM %d (debug) init failed: %s", i, esp_err_to_name(ret));
-                return ret;
-            }
-
-            ret = esp_tusb_init_console(i);
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Console redirect to CDC%d failed: %s", i, esp_err_to_name(ret));
-                return ret;
-            }
-
-            ESP_LOGI(TAG, "CDC%d initialized as debug console", i);
-            continue;
-        }
-#endif
-
         cdc_priv[i].cdc_index = i;
 
-        char name[PORT_NAME_MAX];
-        snprintf(name, sizeof(name), "CDC%d", i);
-
-        // Initialize port struct
         port_t *port = &cdc_ports[i];
         memset(port, 0, sizeof(port_t));
-        port->id = i;  // CDC ports get IDs 0, 1
-        strncpy(port->name, name, PORT_NAME_MAX - 1);
+        port->id = i;  // CDC ports get IDs 0-5
+        snprintf(port->name, PORT_NAME_MAX, "CDC%d", i);
         port->type = PORT_TYPE_CDC;
         port->state = PORT_STATE_READY;
         port->ops = cdc_ops;
@@ -233,7 +190,7 @@ esp_err_t port_cdc_init(void)
 
         port->rx_buf = xStreamBufferCreate(PORT_BUF_SIZE, 1);
         if (!port->rx_buf) {
-            ESP_LOGE(TAG, "Failed to create rx buffer for %s", name);
+            ESP_LOGE(TAG, "Failed to create rx buffer for %s", port->name);
             return ESP_ERR_NO_MEM;
         }
 
@@ -257,11 +214,11 @@ esp_err_t port_cdc_init(void)
         // Register in port registry
         ret = port_registry_add(port);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to register %s in port registry", name);
+            ESP_LOGE(TAG, "Failed to register %s in port registry", port->name);
             return ret;
         }
 
-        ESP_LOGI(TAG, "CDC port %s initialized and registered", name);
+        ESP_LOGI(TAG, "CDC port %s initialized and registered", port->name);
     }
 
     return ESP_OK;
@@ -272,10 +229,5 @@ port_t *port_cdc_get(int cdc_index)
     if (cdc_index < 0 || cdc_index >= CDC_PORT_COUNT) {
         return NULL;
     }
-#ifdef CONFIG_VUART_CDC_DEBUG_PORT
-    if (cdc_index == CDC_DEBUG_INDEX) {
-        return NULL;  // Debug port is not available for routing
-    }
-#endif
     return &cdc_ports[cdc_index];
 }
