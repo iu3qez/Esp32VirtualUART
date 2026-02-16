@@ -7,6 +7,7 @@
 - Started: 2026-02-13
 
 ## Completed
+- [x] Add WiFi STA settings UI and fix config save race condition (2026-02-16) `9c99b79`
 - [x] Add frontend build target, fix docs, add project onboarding files (2026-02-16) `ebb33c0`
 - [x] Phase 1: USB CDC-ACM composite device with 2 virtual COM ports (2026-02-13)
 - [x] Phase 2: Hardware UART port driver (2026-02-13)
