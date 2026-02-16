@@ -55,13 +55,25 @@ static const char *FALLBACK_HTML =
     "h1{color:#0af}input,button{width:100%;padding:10px;margin:6px 0;box-sizing:border-box;border-radius:4px;border:1px solid #444;background:#16213e;color:#e0e0e0}"
     "button{background:#0af;color:#000;border:none;cursor:pointer;font-weight:bold}"
     ".info{background:#16213e;padding:12px;border-radius:6px;margin:12px 0}"
+    "#msg{color:#0af;margin:8px 0}"
     "</style></head><body>"
     "<h1>VirtualUART</h1>"
     "<div class='info'>Connected to AP mode. Configure WiFi to connect to your network.</div>"
-    "<form method='GET' action='/api/config'>"
-    "<p>Use the <a href='/' style='color:#0af'>web interface</a> to configure ports and routing.</p>"
-    "<p style='color:#888;font-size:0.85em'>If the web UI doesn't load, flash the frontend to the LittleFS partition.</p>"
-    "</form></body></html>";
+    "<label>SSID<input id='ssid' placeholder='WiFi network name'></label>"
+    "<label>Password<input id='pass' type='password' placeholder='WiFi password'></label>"
+    "<button onclick='saveWifi()'>Connect to WiFi</button>"
+    "<div id='msg'></div>"
+    "<p style='color:#888;font-size:0.85em'>Flash the frontend to LittleFS for the full web interface.</p>"
+    "<script>"
+    "function saveWifi(){"
+    "var s=document.getElementById('ssid').value,p=document.getElementById('pass').value;"
+    "if(!s){document.getElementById('msg').textContent='Enter SSID';return;}"
+    "fetch('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify({wifi:{ssid:s,password:p}})})"
+    ".then(function(r){return r.json()})"
+    ".then(function(){document.getElementById('msg').textContent='Saved! Connecting to '+s+'...';})"
+    ".catch(function(){document.getElementById('msg').textContent='Error saving';})}"
+    "</script></body></html>";
 
 // Captive portal detection handler.
 // Responds to known probe URLs with a redirect to the AP's root page,

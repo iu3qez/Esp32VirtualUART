@@ -16,6 +16,11 @@
     showPanel = id !== null;
   }
 
+  function openSettings() {
+    selectedPortId = null;
+    showPanel = true;
+  }
+
   async function onCreateRoute(srcId, dstId) {
     await createRoute({
       type: 0, // Bridge by default
@@ -59,6 +64,8 @@
                  onClose={() => { showPanel = false; selectedPortId = null; }} />
   {/if}
 
+  <button class="settings-btn" on:click={openSettings} title="WiFi &amp; Settings">&#9881;</button>
+
   <StatusBar />
 </main>
 
@@ -75,4 +82,22 @@
     height: 100vh;
     position: relative;
   }
+  .settings-btn {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 99;
+    background: #1a1a2e;
+    color: #aaa;
+    border: 1px solid #444;
+    border-radius: 6px;
+    font-size: 20px;
+    width: 36px;
+    height: 36px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .settings-btn:hover { color: #4a9eff; border-color: #4a9eff; }
 </style>

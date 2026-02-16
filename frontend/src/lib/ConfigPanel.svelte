@@ -1,7 +1,8 @@
 <script>
+  import { onMount } from 'svelte';
   import { PORT_TYPES, SIGNAL_NAMES } from '../stores/ports.js';
   import { ROUTE_TYPES } from '../stores/routes.js';
-  import { updatePortConfig, createRoute, deleteRoute } from './api.js';
+  import { updatePortConfig, createRoute, deleteRoute, fetchConfig, updateConfig } from './api.js';
   import { refreshPorts } from '../stores/ports.js';
   import { refreshRoutes } from '../stores/routes.js';
 
@@ -15,6 +16,13 @@
   let stopBits = 0;
   let parity = 0;
 
+  // WiFi settings
+  let wifiConfig = { wifi: { ssid: '', mode: 'ap', ip: '', connected: false }, tcpConfigs: [] };
+  let wifiSsid = '';
+  let wifiPassword = '';
+  let wifiSaving = false;
+  let wifiStatus = '';
+
   // New route form
   let newRouteType = 0;
   let newRouteSrc = 0;
@@ -25,6 +33,34 @@
     dataBits = selectedPort.lineCoding?.dataBits || 8;
     stopBits = selectedPort.lineCoding?.stopBits || 0;
     parity = selectedPort.lineCoding?.parity || 0;
+  }
+
+  async function loadWifiConfig() {
+    try {
+      wifiConfig = await fetchConfig();
+      wifiSsid = wifiConfig.wifi?.ssid || '';
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  async function saveWifi() {
+    if (!wifiSsid.trim()) return;
+    wifiSaving = true;
+    wifiStatus = '';
+    try {
+      const result = await updateConfig({ wifi: { ssid: wifiSsid.trim(), password: wifiPassword } });
+      wifiPassword = '';
+      if (result?.wifiChanging) {
+        wifiStatus = 'Saved! Device is switching to "' + wifiSsid.trim() + '". You may lose connection if the device leaves AP mode.';
+      } else {
+        wifiStatus = 'Saved.';
+      }
+      setTimeout(loadWifiConfig, 8000);
+    } catch (e) {
+      wifiStatus = 'Saved (connection lost — device may be switching networks).';
+    }
+    wifiSaving = false;
   }
 
   async function saveLineCoding() {
@@ -48,12 +84,46 @@
     await deleteRoute(id);
     await refreshRoutes();
   }
+
+  onMount(() => {
+    loadWifiConfig();
+    const interval = setInterval(loadWifiConfig, 10000);
+    return () => clearInterval(interval);
+  });
 </script>
 
 <div class="panel">
   <div class="panel-header">
     <h3>{selectedPort ? selectedPort.name : 'Configuration'}</h3>
     <button class="close-btn" on:click={onClose}>&times;</button>
+  </div>
+
+  <div class="section">
+    <h4>WiFi Settings</h4>
+    <div class="wifi-status">
+      <span class="wifi-mode" class:sta={wifiConfig.wifi?.mode === 'sta'}
+            class:ap={wifiConfig.wifi?.mode === 'ap'}>
+        {wifiConfig.wifi?.mode === 'sta' ? 'STA' : 'AP'}
+      </span>
+      <span>{wifiConfig.wifi?.connected ? wifiConfig.wifi?.ip : 'Not connected'}</span>
+    </div>
+    {#if wifiConfig.wifi?.ssid}
+      <div class="wifi-current">Network: {wifiConfig.wifi.ssid}</div>
+    {/if}
+    <label>
+      SSID
+      <input type="text" bind:value={wifiSsid} placeholder="WiFi network name" />
+    </label>
+    <label>
+      Password
+      <input type="password" bind:value={wifiPassword} placeholder="WiFi password" />
+    </label>
+    <button on:click={saveWifi} disabled={wifiSaving || !wifiSsid.trim()}>
+      {wifiSaving ? 'Saving...' : 'Connect to WiFi'}
+    </button>
+    {#if wifiStatus}
+      <div class="wifi-msg">{wifiStatus}</div>
+    {/if}
   </div>
 
   {#if selectedPort}
@@ -258,5 +328,34 @@
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px dashed #444;
+  }
+  .wifi-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .wifi-mode {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: bold;
+    background: #c93;
+    color: #000;
+  }
+  .wifi-mode.sta { background: #3c9; }
+  .wifi-current {
+    font-size: 11px;
+    color: #aaa;
+    margin-bottom: 6px;
+  }
+  .wifi-msg {
+    font-size: 11px;
+    color: #4a9eff;
+    margin-top: 4px;
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

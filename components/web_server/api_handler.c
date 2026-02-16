@@ -6,9 +6,21 @@
 #include "route.h"
 #include "config_store.h"
 #include "wifi_mgr.h"
+#include "esp_timer.h"
 #include <string.h>
 
 static const char *TAG = "api_handler";
+
+// Deferred WiFi switch (allows HTTP response to complete before killing AP)
+static char deferred_ssid[33] = "";
+static char deferred_pass[65] = "";
+
+static void deferred_wifi_switch_cb(void *arg)
+{
+    ESP_LOGI(TAG, "Deferred WiFi switch to SSID: %s", deferred_ssid);
+    wifi_mgr_set_credentials(deferred_ssid,
+        strlen(deferred_pass) > 0 ? deferred_pass : NULL);
+}
 
 // Helper: send JSON response
 static esp_err_t send_json(httpd_req_t *req, cJSON *json)
@@ -396,18 +408,37 @@ esp_err_t api_put_config_handler(httpd_req_t *req)
     // Save config
     config_store_save(&sys_config);
 
-    // Apply WiFi changes
-    if (wifi_changed && strlen(sys_config.wifi_ssid) > 0) {
-        ESP_LOGI(TAG, "WiFi credentials updated, reconnecting...");
-        wifi_mgr_set_credentials(sys_config.wifi_ssid,
-            strlen(sys_config.wifi_pass) > 0 ? sys_config.wifi_pass : NULL);
-    }
-
     cJSON_Delete(json);
 
+    // Send response BEFORE switching WiFi (switching kills the AP connection)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    httpd_resp_sendstr(req, "{\"ok\":true}");
+    httpd_resp_sendstr(req, wifi_changed ? "{\"ok\":true,\"wifiChanging\":true}" : "{\"ok\":true}");
+
+    // Defer WiFi switch so the HTTP response has time to reach the client
+    if (wifi_changed && strlen(sys_config.wifi_ssid) > 0) {
+        strncpy(deferred_ssid, sys_config.wifi_ssid, sizeof(deferred_ssid) - 1);
+        deferred_ssid[sizeof(deferred_ssid) - 1] = '\0';
+        strncpy(deferred_pass, sys_config.wifi_pass, sizeof(deferred_pass) - 1);
+        deferred_pass[sizeof(deferred_pass) - 1] = '\0';
+
+        const esp_timer_create_args_t timer_args = {
+            .callback = deferred_wifi_switch_cb,
+            .name = "wifi_switch",
+        };
+        esp_timer_handle_t timer;
+        if (esp_timer_create(&timer_args, &timer) == ESP_OK) {
+            // 500ms delay gives HTTP response time to flush
+            esp_timer_start_once(timer, 500 * 1000);
+            ESP_LOGI(TAG, "WiFi switch deferred by 500ms");
+        } else {
+            // Fallback: switch immediately if timer fails
+            ESP_LOGW(TAG, "Timer create failed, switching WiFi immediately");
+            wifi_mgr_set_credentials(deferred_ssid,
+                strlen(deferred_pass) > 0 ? deferred_pass : NULL);
+        }
+    }
+
     return ESP_OK;
 }
 
