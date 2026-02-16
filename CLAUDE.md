@@ -79,7 +79,7 @@ Esp32VirtualUART/
 
 Components use `idf_component.yml` for managed dependencies:
 - `port_cdc/idf_component.yml` → `espressif/esp_tinyusb: "^1.7.0"`
-- `wifi_mgr/idf_component.yml` → `espressif/esp_wifi_remote`, `espressif/esp_hosted`, `espressif/esp-extconn`
+- `wifi_mgr/idf_component.yml` → `espressif/esp_wifi_remote`, `espressif/esp_hosted: "~2.6.0"`
 - `status_led/idf_component.yml` → `espressif/led_strip: "^2.5.0"`
 - `web_server/idf_component.yml` → `joltwallet/littlefs: "^1.14.0"`
 

@@ -10,6 +10,9 @@ Target board: Guition JC-ESP32P4-M3-Dev with ESP32-C6 companion (WiFi via ESP-Ho
 _No current goal. Next planned item will be promoted on next planning session._
 
 ## Completed
+- [x] Replace esp-extconn with direct esp_hosted, pin ~2.6.0 for C6 co-proc compat (2026-02-16) `92e13ba`
+- [x] Add FS/HS config descriptors and device qualifier for P4 HS USB (2026-02-16) `2f1cf4f`
+- [x] Wire frontend build as dependency of LittleFS image generation (2026-02-16) `2c3c89f`
 - [x] ESP32-P4 migration — build verification and hardware testing (2026-02-16)
 - [x] Migrate from ESP32-S3 to ESP32-P4: 6 CDC ports, HS USB, ESP-Hosted WiFi, IP101 Ethernet (2026-02-16)
 - [x] OTA firmware update support (2026-02-16)
