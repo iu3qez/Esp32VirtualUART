@@ -1,0 +1,80 @@
+---
+session: general
+date: 2026-02-16
+status: complete
+outcome: PARTIAL_PLUS
+---
+
+goal: Migrate ESP32 Virtual UART from S3 to P4 - 6 CDC ports, HS USB, Ethernet, ESP-Hosted WiFi
+now: Flash firmware to Guition JC-ESP32P4-M3-Dev board and verify 6 ttyACM devices appear
+
+test: ". /home/sf/esp/esp-idf/export.sh 2>/dev/null && cd /home/sf/src/Esp32VirtualUART && idf.py build"
+
+done_this_session:
+  - task: Rewrote sdkconfig.defaults for ESP32-P4 (360MHz RISC-V, 32MB HEX PSRAM, HS USB, IP101 Ethernet)
+    files: [sdkconfig.defaults]
+  - task: Custom USB descriptors for 6 CDC-ACM ports without notification EPs (bulk IN+OUT only, 512B HS)
+    files: [components/port_cdc/usb_descriptors.c, components/port_cdc/include/port_cdc.h]
+  - task: Updated port_cdc.c - removed debug console feature, all 6 ports registered for routing
+    files: [components/port_cdc/port_cdc.c]
+  - task: WiFi via ESP-Hosted C6 companion - added esp_extconn_init() before esp_wifi_init()
+    files: [components/wifi_mgr/wifi_mgr.c, components/wifi_mgr/CMakeLists.txt, components/wifi_mgr/idf_component.yml]
+  - task: New ethernet_mgr component for IP101 PHY (MDC=31, MDIO=52, power=51, CLK=50, phy_addr=1)
+    files: [components/ethernet_mgr/ethernet_mgr.c, components/ethernet_mgr/include/ethernet_mgr.h, components/ethernet_mgr/CMakeLists.txt]
+  - task: Updated main.c - 6 CDC ports (IDs 0-5), UART (6-7), TCP (8-11), configurable LED GPIO, ethernet init
+    files: [main/main.c, main/CMakeLists.txt]
+  - task: Replaced Kconfig - removed CDC debug port options, added LED GPIO config + ethernet toggle
+    files: [main/Kconfig.projbuild]
+  - task: CMake hack to override CONFIG_TINYUSB_CDC_COUNT from 2 to 6 via sdkconfig.h patching
+    files: [CMakeLists.txt]
+  - task: Fixed strncpy/format-truncation warnings for RISC-V -Werror strict mode
+    files: [components/web_server/web_server.c, components/port_cdc/port_cdc.c]
+  - task: Updated CLAUDE.md and ROADMAP.md for P4 migration
+    files: [CLAUDE.md, ROADMAP.md]
+
+blockers: []
+
+questions:
+  - Does the Guition board have a WS2812 LED and on which GPIO? CONFIG_VUART_STATUS_LED_GPIO defaults to 48 but may need adjustment
+  - USB VID/PID still placeholders (0x1234:0x5678) - need official values before distribution
+  - SPIRAM_MODE_HEX used for P4 but verify board actually has 32MB PSRAM at boot logs
+  - The TUD_CDC_DESC_NO_NOTIF custom macro omits notification EPs entirely - verify host OS (Windows/Linux/Mac) handles CDC without serial-state notifications
+
+decisions:
+  - cdc_no_notif_ep: "Omitted CDC notification (interrupt IN) endpoints to fit 6 ports in 16 EPs. Line coding and DTR/RTS still work via EP0 control transfers. Serial-state notifications (DCD/DSR/RI) won't be sent to host."
+  - sdkconfig_patch_hack: "esp_tinyusb Kconfig caps CDC_COUNT at [1,2]. Used CMake add_custom_command to sed-patch sdkconfig.h after generation, replacing #define CONFIG_TINYUSB_CDC_COUNT 2 with 6. All IDF components depend on patch_cdc_count target."
+  - ethernet_separate_component: "Created ethernet_mgr as standalone component rather than extending wifi_mgr, keeping WiFi and Ethernet concerns separate."
+  - debug_console_removed: "Removed CONFIG_VUART_CDC_DEBUG_PORT entirely. On P4, debug output goes to UART0 (board's USB-UART bridge), freeing all 6 CDC ports for routing."
+
+findings:
+  - esp_extconn_api: "esp_extconn_init() takes esp_extconn_config_t* pointer, not void. Use ESP_EXTCONN_CONFIG_DEFAULT() macro."
+  - p4_spiram_hex: "ESP32-P4 uses SPIRAM_MODE_HEX not SPIRAM_MODE_OCT (unlike S3)"
+  - p4_no_wifi_iram: "P4 has no direct WiFi hardware so CONFIG_ESP_WIFI_IRAM_OPT etc are invalid"
+  - riscv_strict_warnings: "RISC-V GCC 14.2 with -Werror catches format-truncation and stringop-truncation that Xtensa didn't. All strncpy→snprintf/memcpy."
+  - tinyusb_kconfig_limit: "esp_tinyusb v1.7.6 Kconfig hard-limits CDC_COUNT to range [1,2]. Internal CDC arrays use CFG_TUD_CDC which maps to CONFIG_TINYUSB_CDC_COUNT. Patching sdkconfig.h is the least invasive override."
+  - binary_size: "Firmware binary ~1.24MB (0x12fed0) for P4 with 6 CDC + Ethernet + ESP-Hosted WiFi. 70% free in 4MB app partition."
+
+worked:
+  - sed-patching sdkconfig.h via CMake custom target with dependency chain
+  - TUD_CDC_DESC_NO_NOTIF custom descriptor macro (51 bytes per CDC vs 75 with notif EP)
+  - esp_hosted + esp_wifi_remote components auto-resolved via idf_component.yml
+  - ESP-IDF component dependency resolution for P4 target (EMAC, SDIO, esp_hosted)
+
+failed:
+  - Global -DCONFIG_TINYUSB_CDC_COUNT=6 via idf_build_set_property(COMPILE_OPTIONS) caused redefinition errors in every compilation unit including mbedtls
+  - -UCONFIG_TINYUSB_CDC_COUNT -DCONFIG_TINYUSB_CDC_COUNT=6 still failed because sdkconfig.h re-defines it after the -U
+
+next:
+  - Flash firmware to Guition JC-ESP32P4-M3-Dev board
+  - Check dmesg for 6 ttyACM devices appearing on host
+  - Verify ESP-Hosted C6 companion initializes (check serial log for esp_extconn and esp_hosted messages)
+  - Verify Ethernet IP101 link up (check serial log for "Ethernet got IP")
+  - Test WiFi AP mode works via C6 ("VirtualUART" network visible)
+  - Open minicom on each of 6 CDC ports, verify independent data paths
+  - Test web GUI accessible over both WiFi and Ethernet
+  - Find correct LED GPIO for Guition board (check schematic or test common GPIOs)
+  - Consider upstreaming esp_tinyusb Kconfig change to support CDC_COUNT > 2
+
+files:
+  created: [components/ethernet_mgr/ethernet_mgr.c, components/ethernet_mgr/include/ethernet_mgr.h, components/ethernet_mgr/CMakeLists.txt, components/wifi_mgr/idf_component.yml]
+  modified: [sdkconfig.defaults, components/port_cdc/include/port_cdc.h, components/port_cdc/usb_descriptors.c, components/port_cdc/port_cdc.c, components/wifi_mgr/wifi_mgr.c, components/wifi_mgr/CMakeLists.txt, components/web_server/web_server.c, main/main.c, main/CMakeLists.txt, main/Kconfig.projbuild, CMakeLists.txt, CLAUDE.md, ROADMAP.md]
