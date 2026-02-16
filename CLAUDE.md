@@ -55,6 +55,7 @@ Esp32VirtualUART/
 │   ├── routing/                # Route engine + signal router (Phase 3)
 │   ├── config_store/           # NVS persistence (Phase 4)
 │   ├── wifi_mgr/               # WiFi STA management (Phase 5)
+│   ├── dns_server/             # Captive portal DNS redirector (AP mode)
 │   ├── status_led/             # RGB LED status indicator
 │   └── web_server/             # HTTP + WebSocket + REST API (Phase 6)
 ├── frontend/                   # Svelte SPA (Phase 7)
@@ -67,7 +68,7 @@ Esp32VirtualUART/
 - **Target:** ESP32-S3 only (uses USB-OTG peripheral)
 - **Firmware framework:** ESP-IDF v5.x (C), NOT Arduino
 - **USB stack:** TinyUSB via `espressif/esp_tinyusb` component
-- **Filesystem:** LittleFS via `espressif/led_strip` component (SPIFFS deprecated)
+- **Filesystem:** LittleFS via `joltwallet/littlefs: "^1.14.0"` (SPIFFS deprecated)
 - **RGB LED:** Addressable WS2812 on GPIO48 (DevKitC) via `espressif/led_strip`
 
 ## ESP-IDF Component Dependencies
@@ -75,6 +76,20 @@ Esp32VirtualUART/
 Components use `idf_component.yml` for managed dependencies:
 - `port_cdc/idf_component.yml` → `espressif/esp_tinyusb: "^1.7.0"`
 - `status_led/idf_component.yml` → `espressif/led_strip: "^2.5.0"`
+- `web_server/idf_component.yml` → `joltwallet/littlefs: "^1.14.0"`
+
+## Frontend Build
+
+The Svelte frontend is in `frontend/` and builds to `data/www/` (Vite output).
+A CMake custom target `frontend_build` auto-runs npm install + build:
+
+```bash
+# Via CMake (after idf.py build has created the build dir)
+. /home/sf/esp/esp-idf/export.sh 2>/dev/null && cmake --build build --target frontend_build
+
+# Or manually
+cd frontend && npm install && npm run build
+```
 
 In CMakeLists.txt, use `log` not `esp_log` for the logging component.
 
@@ -83,3 +98,4 @@ In CMakeLists.txt, use `log` not `esp_log` for the logging component.
 - Plan: `thoughts/shared/plans/PLAN-esp32-virtual-uart.md`
 - Spec: `thoughts/shared/specs/2026-02-13-esp32-virtual-uart-spec.md`
 - Validation: `thoughts/shared/handoffs/build-20260213-esp32-virtual-uart/validation-report.md`
+- Continuity ledger: `thoughts/ledgers/CONTINUITY_CLAUDE-esp32-virtual-uart.md`

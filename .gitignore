@@ -23,5 +23,6 @@ data/www/
 .DS_Store
 Thumbs.db
 
-# Thoughts/planning docs (local only)
+# Thoughts/planning docs (local only, except ledgers)
 thoughts/
+!thoughts/ledgers/
