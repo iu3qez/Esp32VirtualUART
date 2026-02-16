@@ -1,0 +1,64 @@
+---
+session: general
+date: 2026-02-16
+status: complete
+outcome: SUCCEEDED
+---
+
+goal: Initialize Continuous Claude infrastructure and fix project docs
+now: Build firmware and begin hardware testing on ESP32-S3 DevKitC
+
+test: ". /home/sf/esp/esp-idf/export.sh 2>/dev/null && cd /home/sf/src/Esp32VirtualUART && idf.py build"
+
+done_this_session:
+  - task: Generated knowledge tree for project navigation
+    files: [.claude/knowledge-tree.json]
+  - task: Created ROADMAP.md tracking all 7 completed phases
+    files: [ROADMAP.md]
+  - task: Ran onboard agent for deep brownfield analysis, created continuity ledger
+    files: [thoughts/ledgers/CONTINUITY_CLAUDE-esp32-virtual-uart.md]
+  - task: Added CMake frontend_build target for auto npm install+build
+    files: [CMakeLists.txt]
+  - task: Fixed CLAUDE.md errors - LittleFS dep (joltwallet/littlefs not led_strip), added dns_server, frontend build docs, web_server dep
+    files: [CLAUDE.md]
+  - task: Built Svelte frontend successfully (51KB JS + 2.7KB CSS → data/www/)
+    files: [data/www/index.html, data/www/assets/]
+  - task: Whitelisted thoughts/ledgers/ in .gitignore
+    files: [.gitignore]
+  - task: Committed and pushed all changes as e77e5d4
+    files: []
+
+blockers: []
+
+questions:
+  - Tree daemon script (tree_daemon.py) not found in Continuous Claude install - needed?
+  - USB VID/PID are placeholders (0x1234:0x5678) - need official values before distribution
+
+decisions:
+  - commit_ledger: Included continuity ledger in git (force-added past .gitignore, then whitelisted thoughts/ledgers/)
+  - frontend_cmake_target: Added as custom target (not build dependency) so firmware builds don't require npm
+
+findings:
+  - littlefs_dep_was_wrong: CLAUDE.md said LittleFS via espressif/led_strip but it's actually joltwallet/littlefs ^1.14.0 in web_server/idf_component.yml
+  - dns_server_missing_from_docs: dns_server component existed but wasn't listed in CLAUDE.md project structure
+  - partition_sizes: Factory app is 1.75MB (0x1C0000), storage is 192KB (0x30000) - ledger originally had these swapped
+  - frontend_builds_clean: Svelte frontend builds in ~500ms, output ~55KB total (21KB gzipped)
+
+worked:
+  - onboard agent produced thorough 169-line continuity ledger covering all components
+  - tldr search tool effective for finding LittleFS references across codebase
+
+failed:
+  - tree_daemon.py script doesn't exist in current Continuous Claude install
+  - onboard agent hit classifyHandoffIfNeeded error at end (non-critical, ledger was already written)
+
+next:
+  - Flash firmware to ESP32-S3 DevKitC and validate USB CDC enumeration (2 COM ports)
+  - Test WiFi AP mode - connect to "VirtualUART" AP, verify captive portal at 192.168.4.1
+  - Test web GUI - create bridge route CDC0 ↔ UART1, verify data flow
+  - Test config persistence - reboot, verify routes restored from NVS
+  - Test TCP server mode - configure port, connect via netcat
+
+files:
+  created: [ROADMAP.md, .claude/knowledge-tree.json, thoughts/ledgers/CONTINUITY_CLAUDE-esp32-virtual-uart.md, data/www/index.html, data/www/assets/index-TijOblFB.css, data/www/assets/index-DK1vWvU2.js]
+  modified: [CLAUDE.md, CMakeLists.txt, .gitignore]
