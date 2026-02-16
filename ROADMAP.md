@@ -7,6 +7,7 @@
 - Started: 2026-02-13
 
 ## Completed
+- [x] Optimize sdkconfig for ESP32-S3 performance (240MHz, 16MB flash, 8MB PSRAM) (2026-02-16) `53239f5`
 - [x] Add WiFi STA settings UI and fix config save race condition (2026-02-16) `9c99b79`
 - [x] Add frontend build target, fix docs, add project onboarding files (2026-02-16) `ebb33c0`
 - [x] Phase 1: USB CDC-ACM composite device with 2 virtual COM ports (2026-02-13)
