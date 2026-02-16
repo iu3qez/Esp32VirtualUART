@@ -85,17 +85,13 @@
 #define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + 6 * TUD_CDC_DESC_NO_NOTIF_LEN)
 
 // String descriptor indices
+// esp_tinyusb limits to 8 string descriptors (USB_STRING_DESCRIPTOR_ARRAY_SIZE)
+// so we only use 4: LANGID, Manufacturer, Product, Serial
 enum {
     STRID_LANGID = 0,
     STRID_MANUFACTURER,
     STRID_PRODUCT,
     STRID_SERIAL,
-    STRID_CDC0,
-    STRID_CDC1,
-    STRID_CDC2,
-    STRID_CDC3,
-    STRID_CDC4,
-    STRID_CDC5,
 };
 
 // Device descriptor - Composite device (IAD)
@@ -117,50 +113,65 @@ const tusb_desc_device_t cdc_device_descriptor = {
     .bNumConfigurations = 1,
 };
 
-// HS bulk endpoint max packet size = 512
-#define CDC_BULK_EP_SIZE  512
+// Bulk endpoint max packet sizes per USB speed
+#define CDC_BULK_FS_EP_SIZE  64   // FullSpeed max
+#define CDC_BULK_HS_EP_SIZE  512  // HighSpeed max
 
-// Configuration descriptor
-const uint8_t cdc_config_descriptor[] = {
-    // Config descriptor
+// FullSpeed configuration descriptor (used when device operates at FS)
+const uint8_t cdc_fs_config_descriptor[] = {
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
                           TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
 
-    // CDC0: Interface 0+1, EP1
-    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC0, STRID_CDC0,
-                          EPNUM_CDC0_OUT, EPNUM_CDC0_IN, CDC_BULK_EP_SIZE),
-
-    // CDC1: Interface 2+3, EP2
-    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC1, STRID_CDC1,
-                          EPNUM_CDC1_OUT, EPNUM_CDC1_IN, CDC_BULK_EP_SIZE),
-
-    // CDC2: Interface 4+5, EP3
-    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC2, STRID_CDC2,
-                          EPNUM_CDC2_OUT, EPNUM_CDC2_IN, CDC_BULK_EP_SIZE),
-
-    // CDC3: Interface 6+7, EP4
-    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC3, STRID_CDC3,
-                          EPNUM_CDC3_OUT, EPNUM_CDC3_IN, CDC_BULK_EP_SIZE),
-
-    // CDC4: Interface 8+9, EP5
-    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC4, STRID_CDC4,
-                          EPNUM_CDC4_OUT, EPNUM_CDC4_IN, CDC_BULK_EP_SIZE),
-
-    // CDC5: Interface 10+11, EP6
-    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC5, STRID_CDC5,
-                          EPNUM_CDC5_OUT, EPNUM_CDC5_IN, CDC_BULK_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC0, 0,
+                          EPNUM_CDC0_OUT, EPNUM_CDC0_IN, CDC_BULK_FS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC1, 0,
+                          EPNUM_CDC1_OUT, EPNUM_CDC1_IN, CDC_BULK_FS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC2, 0,
+                          EPNUM_CDC2_OUT, EPNUM_CDC2_IN, CDC_BULK_FS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC3, 0,
+                          EPNUM_CDC3_OUT, EPNUM_CDC3_IN, CDC_BULK_FS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC4, 0,
+                          EPNUM_CDC4_OUT, EPNUM_CDC4_IN, CDC_BULK_FS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC5, 0,
+                          EPNUM_CDC5_OUT, EPNUM_CDC5_IN, CDC_BULK_FS_EP_SIZE),
 };
 
-// String descriptors
+// HighSpeed configuration descriptor (used when device operates at HS)
+const uint8_t cdc_hs_config_descriptor[] = {
+    TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN,
+                          TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 500),
+
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC0, 0,
+                          EPNUM_CDC0_OUT, EPNUM_CDC0_IN, CDC_BULK_HS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC1, 0,
+                          EPNUM_CDC1_OUT, EPNUM_CDC1_IN, CDC_BULK_HS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC2, 0,
+                          EPNUM_CDC2_OUT, EPNUM_CDC2_IN, CDC_BULK_HS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC3, 0,
+                          EPNUM_CDC3_OUT, EPNUM_CDC3_IN, CDC_BULK_HS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC4, 0,
+                          EPNUM_CDC4_OUT, EPNUM_CDC4_IN, CDC_BULK_HS_EP_SIZE),
+    TUD_CDC_DESC_NO_NOTIF(ITF_NUM_CDC5, 0,
+                          EPNUM_CDC5_OUT, EPNUM_CDC5_IN, CDC_BULK_HS_EP_SIZE),
+};
+
+// Device qualifier descriptor (required for HS-capable devices)
+const tusb_desc_device_qualifier_t cdc_qualifier_descriptor = {
+    .bLength            = sizeof(tusb_desc_device_qualifier_t),
+    .bDescriptorType    = TUSB_DESC_DEVICE_QUALIFIER,
+    .bcdUSB             = 0x0200,
+    .bDeviceClass       = TUSB_CLASS_MISC,
+    .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
+    .bDeviceProtocol    = MISC_PROTOCOL_IAD,
+    .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
+    .bNumConfigurations = 1,
+    .bReserved          = 0,
+};
+
+// String descriptors (max 8 entries per esp_tinyusb USB_STRING_DESCRIPTOR_ARRAY_SIZE)
 const char *cdc_string_descriptor[] = {
     [STRID_LANGID]       = (const char[]){0x09, 0x04},  // English (US)
     [STRID_MANUFACTURER] = "VirtualUART",
     [STRID_PRODUCT]      = "ESP32-P4 Virtual UART",
     [STRID_SERIAL]       = "000001",
-    [STRID_CDC0]         = "Virtual UART Port 0",
-    [STRID_CDC1]         = "Virtual UART Port 1",
-    [STRID_CDC2]         = "Virtual UART Port 2",
-    [STRID_CDC3]         = "Virtual UART Port 3",
-    [STRID_CDC4]         = "Virtual UART Port 4",
-    [STRID_CDC5]         = "Virtual UART Port 5",
 };

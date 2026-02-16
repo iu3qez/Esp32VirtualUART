@@ -9,7 +9,9 @@ static const char *TAG = "port_cdc";
 
 // External descriptors from usb_descriptors.c
 extern const tusb_desc_device_t cdc_device_descriptor;
-extern const uint8_t cdc_config_descriptor[];
+extern const uint8_t cdc_fs_config_descriptor[];
+extern const uint8_t cdc_hs_config_descriptor[];
+extern const tusb_desc_device_qualifier_t cdc_qualifier_descriptor;
 extern const char *cdc_string_descriptor[];
 
 // Private data for each CDC port
@@ -158,11 +160,14 @@ esp_err_t port_cdc_init(void)
     ESP_LOGI(TAG, "Initializing TinyUSB CDC with %d ports (HS USB)", CDC_PORT_COUNT);
 
     // Install TinyUSB driver with custom descriptors
+    // ESP32-P4 HS USB requires both FS and HS config descriptors + qualifier
     const tinyusb_config_t tusb_cfg = {
         .device_descriptor = &cdc_device_descriptor,
-        .configuration_descriptor = cdc_config_descriptor,
+        .fs_configuration_descriptor = cdc_fs_config_descriptor,
+        .hs_configuration_descriptor = cdc_hs_config_descriptor,
+        .qualifier_descriptor = &cdc_qualifier_descriptor,
         .string_descriptor = cdc_string_descriptor,
-        .string_descriptor_count = 10,  // LANGID + MFR + PROD + SER + 6 CDC
+        .string_descriptor_count = 4,   // LANGID + MFR + PROD + SER
         .external_phy = false,
         .self_powered = false,
         .vbus_monitor_io = -1,
