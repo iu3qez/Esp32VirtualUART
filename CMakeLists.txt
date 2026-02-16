@@ -35,6 +35,12 @@ add_custom_target(frontend_build
     COMMENT "Building Svelte frontend"
 )
 
+# Ensure data/www exists (needed before littlefs_create_partition_image configures)
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/www)
+
 # Generate LittleFS partition image from data/www/ directory
 # This flashes the web frontend alongside the firmware
 littlefs_create_partition_image(storage data/www FLASH_IN_PROJECT)
+
+# Wire frontend build before LittleFS image generation
+add_dependencies(littlefs_storage_bin frontend_build)
