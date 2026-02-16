@@ -3,7 +3,6 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_log.h"
-#include "esp_extconn.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include <string.h>
@@ -135,15 +134,8 @@ static esp_err_t init_wifi_common(void)
     ret = esp_event_loop_create_default();
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) return ret;
 
-    // Initialize external connection to ESP32-C6 companion chip (SDIO)
-    // This must be called before esp_wifi_init() on ESP32-P4
-    esp_extconn_config_t extconn_cfg = ESP_EXTCONN_CONFIG_DEFAULT();
-    ret = esp_extconn_init(&extconn_cfg);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "esp_extconn_init failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
+    // esp_wifi_init() triggers ESP-Hosted transport to C6 companion automatically
+    // via esp_wifi_remote (SDIO, pins configured by ESP_HOSTED_P4_DEV_BOARD_FUNC_BOARD)
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ret = esp_wifi_init(&cfg);
     if (ret != ESP_OK) {
