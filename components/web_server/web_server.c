@@ -75,41 +75,52 @@ static const char *FALLBACK_HTML =
     ".catch(function(){document.getElementById('msg').textContent='Error saving';})}"
     "</script></body></html>";
 
-// Captive portal detection handler.
-// Responds to known probe URLs with a redirect to the AP's root page,
-// triggering the "Sign in to network" popup on phones/laptops.
-static esp_err_t captive_portal_handler(httpd_req_t *req)
+// Check if request needs captive portal redirect (Host header not matching AP IP).
+// Returns true if we handled the request (redirected), false to continue normal handling.
+static bool captive_portal_check(httpd_req_t *req)
 {
-    // Only redirect in AP mode
-    if (wifi_mgr_get_mode() != WIFI_MGR_MODE_AP) {
-        // In STA mode, return 204 for generate_204 or 404 for others
-        if (strstr(req->uri, "generate_204")) {
-            httpd_resp_set_status(req, "204 No Content");
-            httpd_resp_send(req, NULL, 0);
-            return ESP_OK;
-        }
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Not found");
-        return ESP_OK;
+    if (wifi_mgr_get_mode() != WIFI_MGR_MODE_AP) return false;
+
+    char host[64] = {0};
+    httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host));
+
+    // If Host is our AP IP, no redirect needed — serve normally
+    if (host[0] == '\0'
+        || strcmp(host, "192.168.4.1") == 0
+        || strncmp(host, "192.168.4.1:", 12) == 0) {
+        return false;
     }
 
-    ESP_LOGI(TAG, "Captive portal redirect: %s", req->uri);
+    // Host is a foreign domain (DNS-hijacked) — redirect to our AP
+    ESP_LOGI(TAG, "Captive portal redirect: %s (Host: %s)", req->uri, host);
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
     httpd_resp_send(req, "Redirecting...", HTTPD_RESP_USE_STRLEN);
-    return ESP_OK;
+    return true;
 }
 
 static bool littlefs_mounted = false;
 
-// Serve static files from LittleFS
+// Serve static files from LittleFS (with captive portal integration)
 static esp_err_t static_file_handler(httpd_req_t *req)
 {
+    // Captive portal: redirect foreign Host headers to our AP IP
+    if (captive_portal_check(req)) return ESP_OK;
+
     char filepath[256];
     const char *uri = req->uri;
 
     // Strip query string
     const char *query = strchr(uri, '?');
     size_t uri_len = query ? (size_t)(query - uri) : strlen(uri);
+
+    // In AP mode, serve the WiFi setup page for root
+    if (wifi_mgr_get_mode() == WIFI_MGR_MODE_AP &&
+        (uri_len == 1 && uri[0] == '/')) {
+        httpd_resp_set_type(req, "text/html");
+        httpd_resp_send(req, FALLBACK_HTML, HTTPD_RESP_USE_STRLEN);
+        return ESP_OK;
+    }
 
     // Build file path
     if (uri_len == 1 && uri[0] == '/') {
@@ -320,27 +331,7 @@ esp_err_t web_server_start(void)
     };
     httpd_register_uri_handler(server, &ws_monitor_uri);
 
-    // Captive portal detection endpoints (must be before wildcard)
-    static const char *captive_portal_uris[] = {
-        "/generate_204",           // Android / Chrome
-        "/gen_204",                // Android variant
-        "/hotspot-detect.html",    // Apple iOS / macOS
-        "/library/test/success.html", // Apple variant
-        "/connecttest.txt",        // Windows
-        "/redirect",              // Windows variant
-        "/canonical.html",         // Firefox
-        "/success.txt",            // Firefox variant
-    };
-    for (int i = 0; i < sizeof(captive_portal_uris) / sizeof(captive_portal_uris[0]); i++) {
-        httpd_uri_t cp_uri = {
-            .uri = captive_portal_uris[i],
-            .method = HTTP_GET,
-            .handler = captive_portal_handler,
-        };
-        httpd_register_uri_handler(server, &cp_uri);
-    }
-
-    // Static file serving (wildcard, lowest priority - registered last)
+    // Static file serving (wildcard catch-all, includes captive portal logic)
     httpd_uri_t static_uri = {
         .uri = "/*",
         .method = HTTP_GET,

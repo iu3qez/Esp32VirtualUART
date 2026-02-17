@@ -95,7 +95,7 @@ static int build_dns_response(char *req, int req_len, char *reply, int reply_max
 
 static void dns_server_task(void *pvParameters)
 {
-    char rx_buf[128];
+    char rx_buf[512];
     char reply[DNS_MAX_LEN];
 
     while (running) {
