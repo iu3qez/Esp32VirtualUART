@@ -1,0 +1,68 @@
+---
+session: general
+date: 2026-02-16
+status: partial
+outcome: PARTIAL_MINUS
+---
+
+goal: Fix 6-port CDC-ACM USB enumeration on ESP32-P4 HS USB
+now: Read GHWCFG registers from serial log, then solve cdc_acm notification EP issue
+
+test: "Flash firmware, check dmesg for 6x /dev/ttyACM* devices on Linux"
+
+done_this_session:
+  - task: Added IAD descriptors to CDC descriptor macro (required for Windows/Linux composite device recognition)
+    files: [components/port_cdc/usb_descriptors.c]
+  - task: Fixed DWC2 DFIFO budget overflow - patched TinyUSB grxfsiz from 2x to 1x RX buffer
+    files: [CMakeLists.txt, tools/patch_dfifo.py, managed_components/espressif__tinyusb/src/portable/synopsys/dwc2/dcd_dwc2.c]
+  - task: Changed interface protocol from NONE to ATCOMMAND (V.250) for driver matching
+    files: [components/port_cdc/usb_descriptors.c]
+  - task: Bumped bcdDevice to 0x0210 to invalidate Windows descriptor cache
+    files: [components/port_cdc/usb_descriptors.c]
+  - task: Added DWC2 GHWCFG1-4 register dump at boot for hardware capability verification
+    files: [components/port_cdc/port_cdc.c]
+
+blockers:
+  - "Linux cdc_acm driver fails probe with -EINVAL (-22) on all 6 CDC comm interfaces"
+  - "Root cause: missing notification (interrupt IN) endpoint on communication interfaces"
+  - "Hardware limit: DWC2 ep_in_count=8 (per TinyUSB config), need 13 for 6 CDC w/ notif EPs (EP0 + 6 bulk + 6 interrupt)"
+  - "Frontend build broken (Node.js 18 vs Vite requiring 20+) - unrelated but blocks full idf.py build"
+
+questions:
+  - "Does GHWCFG4 NumInEps show more than 8 IN endpoints? TinyUSB hardcodes ep_in_count=8 in dwc2_esp32.h:76 but hardware may support more"
+  - "If hardware supports >8 IN EPs, we can add notification endpoints and solve everything"
+  - "If truly limited to 8 IN EPs: reduce to 3 CDC ports? Use vendor class + WinUSB? Custom cdc_acm kernel module?"
+
+decisions:
+  - hs_bulk_512: "USB 2.0 spec mandates 512-byte bulk for HS. Tried 256 first - Linux kernel rejects with 'invalid maxpacket'. Reverted."
+  - single_buffer_rx: "Changed DWC2 grxfsiz from 2x to 1x packet buffer. Saves 129 words. Acceptable for CDC serial - DMA drains fast enough."
+  - iad_descriptors: "Added 8-byte IAD before each CDC interface pair. Required for Windows composite device driver (usbccgp.sys) to group interfaces."
+  - cmake_patch_approach: "Patching TinyUSB source via tools/patch_dfifo.py called from CMakeLists.txt custom target, similar to existing CDC count patch."
+
+findings:
+  - dwc2_fifo_budget: "ESP32-P4 HS DWC2: 4096 bytes (1024 words) FIFO. After DMA meta (32w) + EP0 (16w) + RX FIFO, only 688w remain for TX. 6x128w (512-byte bulk) = 768w. Short by 96 words with 2x RX. Fits with 1x RX (saves 129w)."
+  - ep_in_limit: "dwc2_esp32.h line 76 hardcodes ep_in_count=8 for HS port. This may not match actual hardware - GHWCFG4 register will reveal truth."
+  - cdc_acm_requires_notif: "Linux cdc_acm driver (kernel 6.6) returns -EINVAL when communication interface has bNumEndpoints=0 (no notification EP)"
+  - usb_spec_bulk_hs: "USB 2.0 Table 5-9: HS bulk wMaxPacketSize MUST be 512. 256 causes Linux 'invalid maxpacket' and Windows Code 10."
+
+worked:
+  - "IAD descriptors fixed Windows not finding usbser.sys for individual interfaces"
+  - "1x RX FIFO patch eliminated dfifo_alloc ASSERT FAILED"
+  - "512-byte HS bulk passes Linux descriptor validation"
+  - "CMake python patch script (tools/patch_dfifo.py) cleanly patches managed_components"
+
+failed:
+  - "256-byte HS bulk - violates USB 2.0 spec, rejected by Linux and Windows"
+  - "CMake sed command for patching - parentheses cause shell syntax errors"
+  - "Protocol NONE (0x00) - may not match Linux cdc_acm ID table (expects ATCOMMAND 0x01)"
+
+next:
+  - "Flash firmware and capture GHWCFG register dump from serial output"
+  - "Check GHWCFG4 bits[29:26] (NumInEps) - if >8, update dwc2_esp32.h ep_in_count and add notification EPs"
+  - "If NumInEps <=8: evaluate alternatives (fewer CDC ports, vendor class, or kernel module)"
+  - "If notification EPs can be added: update TUD_CDC_DESC_NO_NOTIF macro to include interrupt IN EP, recalculate FIFO budget"
+  - "Fix frontend build (upgrade Node.js to 20+) so idf.py build completes fully"
+
+files:
+  created: [tools/patch_dfifo.py]
+  modified: [components/port_cdc/usb_descriptors.c, components/port_cdc/port_cdc.c, CMakeLists.txt, ROADMAP.md]

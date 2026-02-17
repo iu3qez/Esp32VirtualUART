@@ -10,6 +10,8 @@ Target board: Guition JC-ESP32P4-M3-Dev with ESP32-C6 companion (WiFi via ESP-Ho
 _No current goal. Next planned item will be promoted on next planning session._
 
 ## Completed
+- [x] Switch to 3 standard CDC-ACM ports with notification endpoints (2026-02-17) `cdf658e`
+- [x] WIP: Fix 6-port CDC-ACM USB enumeration (2026-02-16) `82c6415`
 - [x] Revert esp_hosted version pin to ~2 for broader compatibility (2026-02-16) `ef4789d`
 - [x] Update docs: remove esp-extconn reference, log frontend build wiring (2026-02-16) `c930f75`
 - [x] Replace esp-extconn with direct esp_hosted, pin ~2.6.0 for C6 co-proc compat (2026-02-16) `92e13ba`

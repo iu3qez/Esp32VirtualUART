@@ -1,0 +1,54 @@
+---
+session: general
+date: 2026-02-16
+status: complete
+outcome: SUCCEEDED
+---
+
+goal: Pin esp_hosted to ~2.6.0 to match C6 co-proc firmware, fix transport version mismatch warning
+now: Delete managed_components/espressif__esp_hosted/ and rebuild to pull downgraded v2.6.x component
+test: ". /home/sf/esp/esp-idf/export.sh 2>/dev/null && idf.py build"
+
+done_this_session:
+  - task: Pin esp_hosted component from ~2 (resolved 2.11.7) to ~2.6.0 matching C6 co-proc protocol 2.6.0
+    files: [components/wifi_mgr/idf_component.yml]
+  - task: Commit USB HS descriptor rework (FS+HS config descriptors, qualifier, drop per-port string descriptors)
+    files: [components/port_cdc/port_cdc.c, components/port_cdc/usb_descriptors.c]
+  - task: Commit WiFi migration from esp-extconn to direct esp_hosted
+    files: [components/wifi_mgr/idf_component.yml, components/wifi_mgr/CMakeLists.txt, components/wifi_mgr/wifi_mgr.c, sdkconfig.defaults]
+  - task: Update README for ESP32-P4 (6 CDC ports, HS USB, Guition board, dual networking)
+    files: [README.md]
+  - task: Update CLAUDE.md with esp_hosted version pin
+    files: [CLAUDE.md]
+
+blockers: []
+
+questions:
+  - C6 co-proc firmware needs separate flash to upgrade beyond 2.6.0 — is that planned?
+
+decisions:
+  - downgrade_host_not_upgrade_coproc: "User requested downgrading host component rather than flashing newer firmware to C6 co-processor"
+  - pin_tilde_2_6_0: "~2.6.0 allows patch updates (2.6.x) while keeping protocol compatibility with co-proc 2.6.0"
+
+findings:
+  - installed_version: "esp_hosted resolved to 2.11.7 with ~2 pin, protocol 2.11.0 vs co-proc 2.6.0"
+  - managed_components_stale: "managed_components/espressif__esp_hosted/ still contains v2.11.7 — must delete before rebuild"
+
+worked:
+  - "Pinning via idf_component.yml semver range is the correct approach for ESP-IDF managed components"
+
+failed: []
+
+next:
+  - "rm -rf managed_components/espressif__esp_hosted/ && idf.py build to pull v2.6.x"
+  - "Flash and verify transport version mismatch warning is gone"
+  - "Monitor for RPC timeout issues that prompted this fix"
+
+files:
+  created: []
+  modified: [components/wifi_mgr/idf_component.yml, components/port_cdc/port_cdc.c, components/port_cdc/usb_descriptors.c, components/wifi_mgr/CMakeLists.txt, components/wifi_mgr/wifi_mgr.c, sdkconfig.defaults, README.md, CLAUDE.md, ROADMAP.md]
+
+commits:
+  - "2f1cf4f Add FS/HS config descriptors and device qualifier for P4 HS USB"
+  - "92e13ba Replace esp-extconn with direct esp_hosted, pin ~2.6.0 for C6 co-proc compat"
+  - "2f3e79d Update docs: README for ESP32-P4, remove esp-extconn, log frontend build wiring"
