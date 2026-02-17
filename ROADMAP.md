@@ -10,6 +10,7 @@ Target board: Guition JC-ESP32P4-M3-Dev with ESP32-C6 companion (WiFi via ESP-Ho
 _No current goal. Next planned item will be promoted on next planning session._
 
 ## Completed
+- [x] Fix LittleFS path mismatch and enable frontend build (2026-02-17) `4b72f68`
 - [x] Fix captive portal: use Host header check instead of specific URL list (2026-02-17) `faac5bb`
 - [x] Add session handoff documents for USB CDC work (2026-02-17) `499c2f5`
 - [x] Switch to 3 standard CDC-ACM ports with notification endpoints (2026-02-17) `cdf658e`
