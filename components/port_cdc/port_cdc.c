@@ -157,7 +157,7 @@ static void cdc_line_coding_changed_callback(int itf, cdcacm_event_t *event)
 
 esp_err_t port_cdc_init(void)
 {
-    ESP_LOGI(TAG, "Initializing TinyUSB CDC with %d ports (HS USB)", CDC_PORT_COUNT);
+    ESP_LOGI(TAG, "Initializing TinyUSB CDC with %d ports (standard 2-interface, HS USB)", CDC_PORT_COUNT);
 
     // Install TinyUSB driver with custom descriptors
     // ESP32-P4 HS USB requires both FS and HS config descriptors + qualifier
@@ -178,6 +178,33 @@ esp_err_t port_cdc_init(void)
         ESP_LOGE(TAG, "TinyUSB driver install failed: %s", esp_err_to_name(ret));
         return ret;
     }
+
+    // Dump DWC2 hardware config registers (HS port base = 0x50000000)
+    // Must be AFTER tinyusb_driver_install() which enables the USB peripheral clock
+    #define DWC2_HS_BASE 0x50000000UL
+    volatile uint32_t *ghwcfg1 = (volatile uint32_t *)(DWC2_HS_BASE + 0x44);
+    volatile uint32_t *ghwcfg2 = (volatile uint32_t *)(DWC2_HS_BASE + 0x48);
+    volatile uint32_t *ghwcfg3 = (volatile uint32_t *)(DWC2_HS_BASE + 0x4C);
+    volatile uint32_t *ghwcfg4 = (volatile uint32_t *)(DWC2_HS_BASE + 0x50);
+    uint32_t hw2 = *ghwcfg2;
+    uint32_t hw3 = *ghwcfg3;
+    uint32_t hw4 = *ghwcfg4;
+    ESP_LOGW(TAG, "DWC2 HS GHWCFG1=0x%08lx", (unsigned long)*ghwcfg1);
+    ESP_LOGW(TAG, "DWC2 HS GHWCFG2=0x%08lx  NumDevEp=%lu  NumHostChan=%lu",
+             (unsigned long)hw2,
+             (unsigned long)((hw2 >> 10) & 0xF),   // bits [13:10]
+             (unsigned long)((hw2 >> 14) & 0xF));   // bits [17:14]
+    ESP_LOGW(TAG, "DWC2 HS GHWCFG3=0x%08lx  DfifoDepth=%lu words (%lu bytes)",
+             (unsigned long)hw3,
+             (unsigned long)(hw3 >> 16),             // bits [31:16]
+             (unsigned long)((hw3 >> 16) * 4));
+    ESP_LOGW(TAG, "DWC2 HS GHWCFG4=0x%08lx  NumDevPerioEp=%lu  NumCtlEps=%lu  NumInEps=%lu  DedFifo=%lu",
+             (unsigned long)hw4,
+             (unsigned long)(hw4 & 0xF),             // bits [3:0]
+             (unsigned long)((hw4 >> 16) & 0xF),     // bits [19:16]
+             (unsigned long)((hw4 >> 26) & 0xF),     // bits [29:26] num_in_eps
+             (unsigned long)((hw4 >> 25) & 0x1));    // bit 25 dedicated FIFO
+    #undef DWC2_HS_BASE
 
     // Initialize each CDC-ACM port
     for (int i = 0; i < CDC_PORT_COUNT; i++) {

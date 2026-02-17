@@ -3,22 +3,19 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(esp32_virtual_uart)
 
 # Override TinyUSB CDC count: esp_tinyusb Kconfig caps at 2,
-# but ESP32-P4 HS USB supports 6 CDC ports (12 of 16 EPs).
-# We patch the generated sdkconfig.h after cmake configures to set CDC count to 6.
-# This is done via a custom target that runs before compilation.
+# but we need 3 CDC ports. Patch sdkconfig.h after cmake configures.
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/config/.cdc_count_patched
-    COMMAND sed -i "s/^#define CONFIG_TINYUSB_CDC_COUNT 2/#define CONFIG_TINYUSB_CDC_COUNT 6/" ${CMAKE_BINARY_DIR}/config/sdkconfig.h
+    COMMAND sed -i "s/^#define CONFIG_TINYUSB_CDC_COUNT 2/#define CONFIG_TINYUSB_CDC_COUNT 3/" ${CMAKE_BINARY_DIR}/config/sdkconfig.h
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/config/.cdc_count_patched
     DEPENDS ${CMAKE_BINARY_DIR}/config/sdkconfig.h
-    COMMENT "Patching CONFIG_TINYUSB_CDC_COUNT to 6 for ESP32-P4 (6 CDC ports)"
+    COMMENT "Patching CONFIG_TINYUSB_CDC_COUNT to 3 (Kconfig caps at 2)"
 )
 add_custom_target(patch_cdc_count ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.cdc_count_patched)
 
 # Patch DWC2 RX FIFO allocation: use single-buffered (1x) instead of double-buffered (2x).
-# ESP32-P4 HS DWC2 has only 4096 bytes of FIFO. With the default 2x RX buffer, 6 CDC ports
-# with 512-byte HS bulk endpoints exceed the FIFO budget by 96 words. Single-buffered RX
-# is sufficient for CDC serial data — the DMA drains packets fast enough.
+# ESP32-P4 HS DWC2 has only 3584 bytes (896 words) of FIFO. Single-buffered RX gives
+# extra headroom for the TX FIFOs and is sufficient for CDC serial data.
 set(DCD_DWC2_FILE ${CMAKE_CURRENT_SOURCE_DIR}/managed_components/espressif__tinyusb/src/portable/synopsys/dwc2/dcd_dwc2.c)
 add_custom_command(
     OUTPUT ${CMAKE_BINARY_DIR}/config/.dfifo_patched
@@ -29,7 +26,7 @@ add_custom_command(
 )
 add_custom_target(patch_dfifo ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.dfifo_patched)
 
-# Make all ESP-IDF components depend on both patches
+# Make all ESP-IDF components depend on patches
 # This ensures sdkconfig.h and dcd_dwc2.c are patched before any compilation
 idf_build_get_property(build_components BUILD_COMPONENTS)
 foreach(comp ${build_components})
@@ -57,4 +54,5 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/data/www)
 littlefs_create_partition_image(storage data/www FLASH_IN_PROJECT)
 
 # Wire frontend build before LittleFS image generation
-add_dependencies(littlefs_storage_bin frontend_build)
+# Disabled until Node.js >= 20 is available (Vite requires it)
+# add_dependencies(littlefs_storage_bin frontend_build)
