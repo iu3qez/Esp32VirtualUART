@@ -7,38 +7,21 @@
   export let y = 0;
   export let selected = false;
   export let onSelect = () => {};
+  export let onDragStart = () => {};
   export let onConnectorMouseDown = () => {};
   export let onConnectorMouseUp = () => {};
-
-  let dragging = false;
-  let dragOffsetX = 0;
-  let dragOffsetY = 0;
 
   $: signals = $liveSignals[port.id] || port.signals || {};
   $: color = PORT_COLORS[port.type] || '#888';
   $: typeName = PORT_TYPES[port.type] || '?';
 
   function onMouseDown(e) {
-    if (e.target.classList.contains('connector')) return;
-    dragging = true;
-    dragOffsetX = e.clientX - x;
-    dragOffsetY = e.clientY - y;
+    if (e.target.closest('.connector-group')) return;
     onSelect(port.id);
+    onDragStart(port.id, e);
     e.preventDefault();
   }
-
-  function onMouseMove(e) {
-    if (!dragging) return;
-    x = e.clientX - dragOffsetX;
-    y = e.clientY - dragOffsetY;
-  }
-
-  function onMouseUp() {
-    dragging = false;
-  }
 </script>
-
-<svelte:window on:mousemove={onMouseMove} on:mouseup={onMouseUp} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <g transform="translate({x},{y})"
@@ -82,22 +65,28 @@
 
   <!-- Input connector (left) -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <circle class="connector input" cx="0" cy="60" r="7"
-          fill="#333" stroke={color} stroke-width="2"
-          on:mouseup={(e) => onConnectorMouseUp(port.id, 'input', e)} />
+  <g class="connector-group input"
+     on:mouseup={(e) => onConnectorMouseUp(port.id, 'input', e)}>
+    <circle class="connector input" cx="0" cy="60" r="11"
+            fill="#333" stroke={color} stroke-width="2" />
+    <text x="14" y="64" fill={color} font-size="10" font-weight="bold">In</text>
+  </g>
 
   <!-- Output connector (right) -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <circle class="connector output" cx="160" cy="60" r="7"
-          fill="#333" stroke={color} stroke-width="2"
-          on:mousedown={(e) => { e.stopPropagation(); onConnectorMouseDown(port.id, 'output', e); }} />
+  <g class="connector-group output"
+     on:mousedown={(e) => { e.stopPropagation(); onConnectorMouseDown(port.id, 'output', e); }}>
+    <circle class="connector output" cx="160" cy="60" r="11"
+            fill="#333" stroke={color} stroke-width="2" />
+    <text x="146" y="64" text-anchor="end" fill={color} font-size="10" font-weight="bold">Out</text>
+  </g>
 </g>
 
 <style>
   .port-node { cursor: grab; }
   .port-node:active { cursor: grabbing; }
-  .connector { cursor: crosshair; }
-  .connector:hover { fill: #555; }
+  .connector-group { cursor: crosshair; }
+  .connector-group:hover circle { fill: #555; }
   .selected rect:first-child {
     filter: drop-shadow(0 0 6px rgba(255,255,255,0.3));
   }

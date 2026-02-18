@@ -100,10 +100,13 @@ static void cdc_rx_callback(int itf, cdcacm_event_t *event)
     if (itf < 0 || itf >= CDC_PORT_COUNT) return;
 
     port_t *port = &cdc_ports[itf];
-    uint8_t buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE];
+    // Use heap buffer — this callback runs on the TinyUSB task stack which is
+    // small (~4KB). A 4096-byte stack buffer would overflow it immediately.
+    uint8_t *buf = malloc(512);
+    if (!buf) return;
     size_t rx_size = 0;
 
-    esp_err_t ret = tinyusb_cdcacm_read(itf, buf, sizeof(buf), &rx_size);
+    esp_err_t ret = tinyusb_cdcacm_read(itf, buf, 512, &rx_size);
     if (ret == ESP_OK && rx_size > 0) {
         size_t sent = xStreamBufferSend(port->rx_buf, buf, rx_size, 0);
         if (sent < rx_size) {
@@ -112,6 +115,7 @@ static void cdc_rx_callback(int itf, cdcacm_event_t *event)
         }
         port->state = PORT_STATE_ACTIVE;
     }
+    free(buf);
 }
 
 static void cdc_line_state_changed_callback(int itf, cdcacm_event_t *event)

@@ -18,10 +18,30 @@
   let wireEnd = { x: 0, y: 0 };
   let drawingWire = false;
 
+  // Dragging a node
+  let draggingPortId = null;
+  let dragOffset = { x: 0, y: 0 };
+
   // SVG pan/zoom
   let viewBox = { x: 0, y: 0, w: 1200, h: 700 };
   let panning = false;
   let panStart = { x: 0, y: 0 };
+
+  function toSvgPoint(svg, clientX, clientY) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  function onNodeDragStart(portId, e) {
+    const svg = e.currentTarget?.ownerSVGElement || document.querySelector('.node-editor');
+    const svgPt = toSvgPoint(svg, e.clientX, e.clientY);
+    const pos = positions[portId] || { x: 0, y: 0 };
+    draggingPortId = portId;
+    dragOffset = { x: svgPt.x - pos.x, y: svgPt.y - pos.y };
+    e.stopPropagation();
+  }
 
   // Auto-layout initial positions
   $: {
@@ -48,7 +68,11 @@
   }
 
   function onConnectorMouseDown(portId, side, e) {
-    const pos = getConnectorPos(portId, side);
+    const p = positions[portId] || { x: 0, y: 0 };
+    const pos = {
+      x: p.x + (side === 'output' ? 160 : 0),
+      y: p.y + 60,
+    };
     wireStart = { portId, ...pos };
     wireEnd = { ...pos };
     drawingWire = true;
@@ -58,18 +82,24 @@
   function onConnectorMouseUp(portId, side, e) {
     if (drawingWire && wireStart && wireStart.portId !== portId) {
       onCreateRoute(wireStart.portId, portId);
+      drawingWire = false;
+      wireStart = null;
+      e.stopPropagation(); // prevent onSvgMouseUp from also firing
     }
-    drawingWire = false;
-    wireStart = null;
   }
 
   function onSvgMouseMove(e) {
+    const svg = e.currentTarget;
+    const svgPt = toSvgPoint(svg, e.clientX, e.clientY);
+
+    if (draggingPortId !== null) {
+      positions[draggingPortId] = {
+        x: svgPt.x - dragOffset.x,
+        y: svgPt.y - dragOffset.y,
+      };
+      positions = positions; // trigger reactivity for wires
+    }
     if (drawingWire) {
-      const svg = e.currentTarget;
-      const pt = svg.createSVGPoint();
-      pt.x = e.clientX;
-      pt.y = e.clientY;
-      const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
       wireEnd = { x: svgPt.x, y: svgPt.y };
     }
     if (panning) {
@@ -90,7 +120,27 @@
     }
   }
 
-  function onSvgMouseUp() {
+  function onSvgMouseUp(e) {
+    // If drawing a wire, check proximity to any input connector
+    if (drawingWire && wireStart) {
+      const svg = e.currentTarget;
+      const svgPt = toSvgPoint(svg, e.clientX, e.clientY);
+      const hitRadius = 30; // generous hit area in SVG units
+
+      for (const port of ports) {
+        if (port.id === wireStart.portId) continue;
+        const pos = positions[port.id];
+        if (!pos) continue;
+        // Input connector center is at (pos.x, pos.y + 60)
+        const dx = svgPt.x - pos.x;
+        const dy = svgPt.y - (pos.y + 60);
+        if (dx * dx + dy * dy < hitRadius * hitRadius) {
+          onCreateRoute(wireStart.portId, port.id);
+          break;
+        }
+      }
+    }
+    draggingPortId = null;
     drawingWire = false;
     wireStart = null;
     panning = false;
@@ -127,14 +177,13 @@
   <rect class="bg" x="{viewBox.x}" y="{viewBox.y}"
         width="{viewBox.w}" height="{viewBox.h}" fill="url(#grid)" />
 
-  <!-- Route wires -->
+  <!-- Route wires (positions referenced directly so Svelte tracks reactivity) -->
   {#each routes as route}
-    {@const srcPos = getConnectorPos(route.srcPortId, 'output')}
+    {@const sp = positions[route.srcPortId] || { x: 0, y: 0 }}
     {#each route.dstPortIds as dstId}
-      {@const dstPos = getConnectorPos(dstId, 'input')}
-      {@const flow = $dataFlow[route.id]}
-      <Wire x1={srcPos.x} y1={srcPos.y}
-            x2={dstPos.x} y2={dstPos.y}
+      {@const dp = positions[dstId] || { x: 0, y: 0 }}
+      <Wire x1={sp.x + 160} y1={sp.y + 60}
+            x2={dp.x} y2={dp.y + 60}
             active={route.active}
             color={PORT_COLORS[ports.find(p => p.id === route.srcPortId)?.type] || '#666'} />
     {/each}
@@ -150,10 +199,11 @@
   <!-- Port nodes -->
   {#each ports as port (port.id)}
     <PortNode {port}
-              bind:x={positions[port.id].x}
-              bind:y={positions[port.id].y}
+              x={positions[port.id].x}
+              y={positions[port.id].y}
               selected={selectedPortId === port.id}
               onSelect={onSelectPort}
+              onDragStart={onNodeDragStart}
               {onConnectorMouseDown}
               {onConnectorMouseUp} />
   {/each}
