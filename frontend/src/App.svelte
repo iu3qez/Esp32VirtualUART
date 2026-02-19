@@ -22,11 +22,15 @@
   }
 
   async function onCreateRoute(srcId, dstId) {
-    await createRoute({
-      type: 0, // Bridge by default
-      srcPortId: srcId,
-      dstPortIds: [dstId],
-    });
+    try {
+      await createRoute({
+        type: 0, // Bridge by default
+        srcPortId: srcId,
+        dstPortIds: [dstId],
+      });
+    } catch (e) {
+      console.error('createRoute failed:', e);
+    }
     await refreshRoutes();
   }
 

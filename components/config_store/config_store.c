@@ -19,10 +19,13 @@ void config_store_defaults(system_config_t *config)
         config->port_coding[i] = port_line_coding_default();
     }
 
-    // Default UART1 pins (adjust for your board)
+    // Default UART1 pins - unassigned (-1 = UART_PIN_NO_CHANGE).
+    // IMPORTANT: GPIO 14-19 are used by the ESP-Hosted SDIO link to the C6.
+    // Assigning UART TX/RX to any of those GPIOs will break WiFi.
+    // Configure actual board pins via the web UI after first boot.
     config->uart_configs[0].uart_num = 1;
-    config->uart_configs[0].tx_pin = 17;
-    config->uart_configs[0].rx_pin = 18;
+    config->uart_configs[0].tx_pin = -1;
+    config->uart_configs[0].rx_pin = -1;
     config->uart_configs[0].rts_pin = -1;
     config->uart_configs[0].cts_pin = -1;
     config->uart_configs[0].dtr_pin = -1;
@@ -30,10 +33,10 @@ void config_store_defaults(system_config_t *config)
     config->uart_configs[0].dcd_pin = -1;
     config->uart_configs[0].ri_pin = -1;
 
-    // Default UART2 pins
+    // Default UART2 pins - unassigned. Same reasoning as UART1.
     config->uart_configs[1].uart_num = 2;
-    config->uart_configs[1].tx_pin = 19;
-    config->uart_configs[1].rx_pin = 20;
+    config->uart_configs[1].tx_pin = -1;
+    config->uart_configs[1].rx_pin = -1;
     config->uart_configs[1].rts_pin = -1;
     config->uart_configs[1].cts_pin = -1;
     config->uart_configs[1].dtr_pin = -1;

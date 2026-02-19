@@ -11,6 +11,29 @@
 
 static const char *TAG = "api_handler";
 
+extern system_config_t sys_config;
+
+// Rebuild sys_config.routes from current active routes and save to NVS
+static void persist_routes(void)
+{
+    route_t active[ROUTE_MAX_COUNT];
+    int count = route_get_all(active, ROUTE_MAX_COUNT);
+    sys_config.route_count = 0;
+    for (int i = 0; i < count && i < ROUTE_MAX_COUNT; i++) {
+        sys_config.routes[i].type            = active[i].type;
+        sys_config.routes[i].src_port_id     = active[i].src_port_id;
+        sys_config.routes[i].dst_count       = active[i].dst_count;
+        memcpy(sys_config.routes[i].dst_port_ids, active[i].dst_port_ids,
+               sizeof(active[i].dst_port_ids));
+        sys_config.routes[i].signal_map_count = active[i].signal_map_count;
+        memcpy(sys_config.routes[i].signal_map, active[i].signal_map,
+               sizeof(active[i].signal_map));
+        sys_config.route_count++;
+    }
+    config_store_save(&sys_config);
+    ESP_LOGI(TAG, "Persisted %d route(s) to NVS", sys_config.route_count);
+}
+
 // Deferred WiFi switch (allows HTTP response to complete before killing AP)
 static char deferred_ssid[33] = "";
 static char deferred_pass[65] = "";
@@ -283,6 +306,9 @@ esp_err_t api_put_routes_handler(httpd_req_t *req)
     // Auto-start the route
     route_start(route_id);
 
+    // Persist updated route list to NVS
+    persist_routes();
+
     cJSON_Delete(json);
 
     // Respond with created route
@@ -292,7 +318,11 @@ esp_err_t api_put_routes_handler(httpd_req_t *req)
         ret = send_json(req, resp);
         cJSON_Delete(resp);
     } else {
-        httpd_resp_sendstr(req, "{\"id\":" );
+        // Should not happen, but respond with a valid JSON error
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+        httpd_resp_sendstr(req, "{\"error\":\"route created but not found\"}");
+        ret = ESP_OK;
     }
     return ret;
 }
@@ -313,6 +343,9 @@ esp_err_t api_delete_route_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    // Persist updated route list to NVS
+    persist_routes();
+
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
     httpd_resp_sendstr(req, "{\"ok\":true}");
@@ -322,7 +355,6 @@ esp_err_t api_delete_route_handler(httpd_req_t *req)
 // GET /api/config
 esp_err_t api_get_config_handler(httpd_req_t *req)
 {
-    extern system_config_t sys_config;
 
     cJSON *obj = cJSON_CreateObject();
 
@@ -355,8 +387,6 @@ esp_err_t api_get_config_handler(httpd_req_t *req)
 // PUT /api/config - update WiFi credentials and/or TCP configs
 esp_err_t api_put_config_handler(httpd_req_t *req)
 {
-    extern system_config_t sys_config;
-
     char *body = read_body(req);
     if (!body) {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing body");

@@ -26,6 +26,7 @@ export async function createRoute(route) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(route),
   });
+  if (!res.ok) throw new Error(`createRoute HTTP ${res.status}`);
   return res.json();
 }
 

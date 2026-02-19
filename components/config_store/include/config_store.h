@@ -4,7 +4,7 @@
 #include "route.h"
 #include "esp_err.h"
 
-#define CONFIG_VERSION      1
+#define CONFIG_VERSION      2  // v2: UART defaults changed away from SDIO pins (GPIO 14-19)
 #define CONFIG_WIFI_SSID_MAX 33
 #define CONFIG_WIFI_PASS_MAX 65
 
