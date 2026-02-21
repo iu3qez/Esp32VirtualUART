@@ -32,8 +32,6 @@ typedef struct {
     uint8_t             task_count;
     volatile uint32_t   bytes_fwd_src_to_dst;
     volatile uint32_t   bytes_fwd_dst_to_src;
-    QueueHandle_t       fwd_src_queue;      // fan-out subscriber queue for fwd direction
-    QueueHandle_t       rev_src_queue;      // fan-out subscriber queue for BRIDGE reverse
 } route_t;
 
 // Initialize the routing engine
