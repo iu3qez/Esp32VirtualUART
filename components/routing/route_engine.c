@@ -39,7 +39,7 @@ static route_runtime_t route_rt[ROUTE_MAX_COUNT];
 // ---------------------------------------------------------------------------
 
 #define SRC_READER_MAX   8   // max distinct source ports active simultaneously
-#define SRC_SUB_MAX      4   // max simultaneous routes sharing one source (6 CDC + 2 UART is fine)
+#define SRC_SUB_MAX      8   // max simultaneous routes sharing one source port
 #define SRC_SUB_Q_DEPTH  8   // depth of each per-route subscriber queue
 // TODO: consider static chunk pool if heap pressure appears under load (8MB PSRAM available)
 
