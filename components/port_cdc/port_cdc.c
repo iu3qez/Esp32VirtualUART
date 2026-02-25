@@ -1,26 +1,29 @@
 #include "port_cdc.h"
 #include "port_registry.h"
-#include "tinyusb.h"
+#include "tusb.h"
 #include "tusb_cdc_acm.h"
+#include "esp_private/usb_phy.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <string.h>
 
 static const char *TAG = "port_cdc";
 
-// External descriptors from usb_descriptors.c
-extern const tusb_desc_device_t cdc_device_descriptor;
-extern const uint8_t cdc_fs_config_descriptor[];
-extern const uint8_t cdc_hs_config_descriptor[];
-extern const tusb_desc_device_qualifier_t cdc_qualifier_descriptor;
-extern const char *cdc_string_descriptor[];
-
 // Private data for each CDC port
 typedef struct {
-    int cdc_index;  // TinyUSB CDC port index (0-5)
+    int cdc_index;  // TinyUSB CDC port index (0-4)
 } cdc_priv_t;
 
 static port_t cdc_ports[CDC_PORT_COUNT];
 static cdc_priv_t cdc_priv[CDC_PORT_COUNT];
+
+// PHY handles for both USB controllers
+static usb_phy_handle_t fs_phy_hdl;
+static usb_phy_handle_t hs_phy_hdl;
+
+// TinyUSB device task handle
+static TaskHandle_t tusb_task_hdl;
 
 // --- Port ops implementation ---
 
@@ -157,67 +160,109 @@ static void cdc_line_coding_changed_callback(int itf, cdcacm_event_t *event)
              "NOEMS"[coding->parity], coding->stop_bits == 0 ? "1" : "2");
 }
 
+// --- TinyUSB device task ---
+
+static void tusb_device_task(void *arg)
+{
+    (void)arg;
+    ESP_LOGI(TAG, "TinyUSB device task started (dual USB)");
+    while (1) {
+        tud_task();
+    }
+}
+
 // --- Public API ---
 
 esp_err_t port_cdc_init(void)
 {
-    ESP_LOGI(TAG, "Initializing TinyUSB CDC with %d ports (standard 2-interface, HS USB)", CDC_PORT_COUNT);
+    esp_err_t ret;
 
-    // Install TinyUSB driver with custom descriptors
-    // ESP32-P4 HS USB requires both FS and HS config descriptors + qualifier
-    const tinyusb_config_t tusb_cfg = {
-        .device_descriptor = &cdc_device_descriptor,
-        .fs_configuration_descriptor = cdc_fs_config_descriptor,
-        .hs_configuration_descriptor = cdc_hs_config_descriptor,
-        .qualifier_descriptor = &cdc_qualifier_descriptor,
-        .string_descriptor = cdc_string_descriptor,
-        .string_descriptor_count = 4,   // LANGID + MFR + PROD + SER
-        .external_phy = false,
-        .self_powered = false,
-        .vbus_monitor_io = -1,
+    ESP_LOGI(TAG, "Initializing dual USB: %d CDC on FS (rhport 0) + %d CDC on HS (rhport 1) = %d total",
+             CDC_PORT_COUNT_FS, CDC_PORT_COUNT_HS, CDC_PORT_COUNT);
+
+    // ---- Step 1: Initialize both USB PHYs ----
+
+    // FS PHY (OTG1.1, internal FSLS PHY) → rhport 0
+    usb_phy_config_t fs_phy_conf = {
+        .controller = USB_PHY_CTRL_OTG,
+        .target     = USB_PHY_TARGET_INT,
+        .otg_mode   = USB_OTG_MODE_DEVICE,
+        .otg_speed  = USB_PHY_SPEED_FULL,
     };
-
-    esp_err_t ret = tinyusb_driver_install(&tusb_cfg);
+    ret = usb_new_phy(&fs_phy_conf, &fs_phy_hdl);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "TinyUSB driver install failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "FS PHY init failed: %s", esp_err_to_name(ret));
         return ret;
     }
+    ESP_LOGI(TAG, "FS PHY (OTG1.1) initialized");
 
-    // Dump DWC2 hardware config registers (HS port base = 0x50000000)
-    // Must be AFTER tinyusb_driver_install() which enables the USB peripheral clock
-    #define DWC2_HS_BASE 0x50000000UL
-    volatile uint32_t *ghwcfg1 = (volatile uint32_t *)(DWC2_HS_BASE + 0x44);
-    volatile uint32_t *ghwcfg2 = (volatile uint32_t *)(DWC2_HS_BASE + 0x48);
-    volatile uint32_t *ghwcfg3 = (volatile uint32_t *)(DWC2_HS_BASE + 0x4C);
-    volatile uint32_t *ghwcfg4 = (volatile uint32_t *)(DWC2_HS_BASE + 0x50);
-    uint32_t hw2 = *ghwcfg2;
-    uint32_t hw3 = *ghwcfg3;
-    uint32_t hw4 = *ghwcfg4;
-    ESP_LOGW(TAG, "DWC2 HS GHWCFG1=0x%08lx", (unsigned long)*ghwcfg1);
-    ESP_LOGW(TAG, "DWC2 HS GHWCFG2=0x%08lx  NumDevEp=%lu  NumHostChan=%lu",
-             (unsigned long)hw2,
-             (unsigned long)((hw2 >> 10) & 0xF),   // bits [13:10]
-             (unsigned long)((hw2 >> 14) & 0xF));   // bits [17:14]
-    ESP_LOGW(TAG, "DWC2 HS GHWCFG3=0x%08lx  DfifoDepth=%lu words (%lu bytes)",
-             (unsigned long)hw3,
-             (unsigned long)(hw3 >> 16),             // bits [31:16]
-             (unsigned long)((hw3 >> 16) * 4));
-    ESP_LOGW(TAG, "DWC2 HS GHWCFG4=0x%08lx  NumDevPerioEp=%lu  NumCtlEps=%lu  NumInEps=%lu  DedFifo=%lu",
-             (unsigned long)hw4,
-             (unsigned long)(hw4 & 0xF),             // bits [3:0]
-             (unsigned long)((hw4 >> 16) & 0xF),     // bits [19:16]
-             (unsigned long)((hw4 >> 26) & 0xF),     // bits [29:26] num_in_eps
-             (unsigned long)((hw4 >> 25) & 0x1));    // bit 25 dedicated FIFO
-    #undef DWC2_HS_BASE
+    // HS PHY (OTG2.0, internal UTMI PHY) → rhport 1
+    usb_phy_config_t hs_phy_conf = {
+        .controller = USB_PHY_CTRL_OTG,
+        .target     = USB_PHY_TARGET_UTMI,
+        .otg_mode   = USB_OTG_MODE_DEVICE,
+        .otg_speed  = USB_PHY_SPEED_HIGH,
+    };
+    ret = usb_new_phy(&hs_phy_conf, &hs_phy_hdl);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "HS PHY init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    ESP_LOGI(TAG, "HS PHY (OTG2.0) initialized");
 
-    // Initialize each CDC-ACM port
+    // ---- Step 2: Initialize TinyUSB device stack on both rhports ----
+    // Init FS first so CDC 0-1 get assigned to FS, then HS gets CDC 2-4
+
+    tusb_rhport_init_t fs_rh_init = {
+        .role  = TUSB_ROLE_DEVICE,
+        .speed = TUSB_SPEED_FULL,
+    };
+    if (!tud_rhport_init(0, &fs_rh_init)) {
+        ESP_LOGE(TAG, "TinyUSB device init failed on rhport 0 (FS)");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "TinyUSB device stack initialized on rhport 0 (FS)");
+
+    tusb_rhport_init_t hs_rh_init = {
+        .role  = TUSB_ROLE_DEVICE,
+        .speed = TUSB_SPEED_HIGH,
+    };
+    if (!tud_rhport_init(1, &hs_rh_init)) {
+        ESP_LOGE(TAG, "TinyUSB device init failed on rhport 1 (HS)");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "TinyUSB device stack initialized on rhport 1 (HS)");
+
+    // ---- Step 3: Start TinyUSB device task ----
+    // tud_task() internally iterates all initialized rhport instances
+
+    BaseType_t xret = xTaskCreatePinnedToCore(
+        tusb_device_task, "TinyUSB",
+        CONFIG_TINYUSB_TASK_STACK_SIZE,
+        NULL,
+        CONFIG_TINYUSB_TASK_PRIORITY,
+        &tusb_task_hdl,
+        CONFIG_TINYUSB_TASK_AFFINITY);
+    if (xret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create TinyUSB device task");
+        return ESP_FAIL;
+    }
+
+    // ---- Step 4: Initialize CDC-ACM ports ----
+    // CDC instance numbering follows init order in TinyUSB class drivers:
+    //   CDC 0-1 on FS (rhport 0), CDC 2-4 on HS (rhport 1)
+
     for (int i = 0; i < CDC_PORT_COUNT; i++) {
         cdc_priv[i].cdc_index = i;
 
         port_t *port = &cdc_ports[i];
         memset(port, 0, sizeof(port_t));
-        port->id = i;  // CDC ports get IDs 0-5
-        snprintf(port->name, PORT_NAME_MAX, "CDC%d", i);
+        port->id = i;  // CDC ports get IDs 0-4
+
+        // Label with bus type: CDC0(FS), CDC1(FS), CDC2(HS), CDC3(HS), CDC4(HS)
+        const char *bus = (i < CDC_PORT_COUNT_FS) ? "FS" : "HS";
+        snprintf(port->name, PORT_NAME_MAX, "CDC%d(%s)", i, bus);
+
         port->type = PORT_TYPE_CDC;
         port->state = PORT_STATE_READY;
         port->ops = cdc_ops;

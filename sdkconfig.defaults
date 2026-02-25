@@ -21,8 +21,9 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 # Compiler: Optimize for performance
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 
-# USB TinyUSB - High-Speed USB
-# NOTE: Kconfig limits CDC_COUNT to 2. Override to 3 is done via CMakeLists.txt sed patch.
+# USB TinyUSB - Dual USB (FS + HS)
+# NOTE: Kconfig limits CDC_COUNT to 2. Override to 5 is done via CMakeLists.txt sed patch.
+# 2 CDC on FS (rhport 0) + 3 CDC on HS (rhport 1) = 5 total
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_CDC_COUNT=2
 CONFIG_TINYUSB_CDC_RX_BUFSIZE=4096
