@@ -10,6 +10,13 @@ Target board: Guition JC-ESP32P4-M3-Dev with ESP32-C6 companion (WiFi via ESP-Ho
 _No current goal. Next planned item will be promoted on next planning session._
 
 ## Completed
+- [x] Fix device stack build issues exposed by dual-instance integration (2026-02-25) `7507d1e`
+- [x] Rename tusb_config.h to tusb_config_host.h to prevent shadowing (2026-02-25) `1d6bf64`
+- [x] Add dual USB support: 2 FS CDC + 3 HS CDC on ESP32-P4 (2026-02-25) `71112a3`
+- [x] Add local tinyusb component wrapper pointing to fork (2026-02-25) `b00af45`
+- [x] Increase fan-out subscriber limit to fix "Too many subscribers" on bridge routes (2026-02-22) `a074ae1`
+- [x] Fix route engine races: semaphore-based task join, error checking, rollback (2026-02-21) `8a03c6b`
+- [x] Fix route persistence, SDIO GPIO conflict, and multi-wire UI bugs (2026-02-19) `aea130a`
 - [x] Fix CDC stack overflow and node editor wire tracking (2026-02-18) `edffc39`
 - [x] Update ROADMAP with LittleFS fix (2026-02-17) `4eaf25d`
 - [x] Fix LittleFS path mismatch and enable frontend build (2026-02-17) `4b72f68`
@@ -47,6 +54,10 @@ _No current goal. Next planned item will be promoted on next planning session._
 - [x] AP mode fix (2026-02-16)
 
 ## Planned
+
+### Investigated / Blocked
+
+- [ ] **Dual USB CDC: 2 extra CDC ports on second USB interface (FS)** — BLOCKED by TinyUSB single-instance limitation. ESP32-P4 has two USB OTG peripherals (HS + FS) but TinyUSB can only run one device stack instance at a time ([esp-idf#15810](https://github.com/espressif/esp-idf/issues/15810), [tinyusb#3092](https://github.com/hathach/tinyusb/issues/3092)). Revisit when/if TinyUSB adds multi-instance support. Alternatives: (a) drop notification EPs to fit more CDC ports on existing HS interface, (b) use FS port as USB Host for external USB-serial adapters. (2026-02-25)
 
 ## Recent Planning Sessions
 _Planning sessions will be recorded here automatically._

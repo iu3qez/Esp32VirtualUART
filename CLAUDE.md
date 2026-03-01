@@ -98,6 +98,12 @@ cd frontend && npm install && npm run build
 
 In CMakeLists.txt, use `log` not `esp_log` for the logging component.
 
+## Important Build Notes
+
+- **sdkconfig changes require fullclean:** If you modify `sdkconfig.defaults`, the existing `sdkconfig` file won't pick up the changes automatically. You must run `idf.py fullclean && idf.py set-target esp32p4` before building.
+- **Managed component patches:** The build system patches `tusb_config.h` in `managed_components/espressif__esp_tinyusb/` at build time. If the managed component is re-downloaded (after fullclean or dependency update), the patch is re-applied automatically by `CMakeLists.txt`.
+- **TinyUSB fork:** Local fork at `/home/sf/src/tinyusb` provides dual-instance device stack support. Changes there are NOT managed by ESP-IDF's component manager.
+
 ## Build Artifacts
 
 - Plan: `thoughts/shared/plans/PLAN-esp32-virtual-uart.md`
