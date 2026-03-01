@@ -1,5 +1,6 @@
 #include "tusb.h"
 #include "device/usbd.h"
+#include "esp_log.h"
 
 // ----- Dual USB Descriptor Configuration -----
 //
@@ -187,6 +188,7 @@ static uint16_t const* _make_string_desc(const char* str) {
 
 uint8_t const *tud_descriptor_device_cb(void) {
     uint8_t rhport = tud_get_current_rhport();
+    ESP_LOGI("USB_DESC", "tud_descriptor_device_cb called, rhport=%d", rhport);
     if (rhport == 0) {
         return (uint8_t const *)&fs_device_descriptor;
     } else {
@@ -197,25 +199,19 @@ uint8_t const *tud_descriptor_device_cb(void) {
 uint8_t const *tud_descriptor_configuration_cb(uint8_t index) {
     (void)index;
     uint8_t rhport = tud_get_current_rhport();
+    ESP_LOGI("USB_DESC", "tud_descriptor_configuration_cb called, rhport=%d, index=%d", rhport, index);
 
     if (rhport == 0) {
-        // FS controller only runs at full speed
         return fs_config_descriptor;
     } else {
-        // HS controller: return config based on negotiated speed
-        // Need to get the speed for THIS specific rhport's instance
-        // Since the HS controller may negotiate to FS speed
-        // For now, check if we're in HS mode
-        // tud_speed_get() returns default instance speed - but we need per-instance
-        // The HS controller on ESP32-P4 always negotiates to HS
         return hs_hs_config_descriptor;
     }
 }
 
 uint8_t const *tud_descriptor_device_qualifier_cb(void) {
     uint8_t rhport = tud_get_current_rhport();
+    ESP_LOGI("USB_DESC", "tud_descriptor_device_qualifier_cb called, rhport=%d", rhport);
     if (rhport == 0) {
-        // FS-only device doesn't need a qualifier
         return NULL;
     }
     return (uint8_t const *)&hs_qualifier_descriptor;
@@ -234,6 +230,7 @@ uint8_t const *tud_descriptor_other_speed_configuration_cb(uint8_t index) {
 uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
     (void)langid;
     uint8_t rhport = tud_get_current_rhport();
+    ESP_LOGI("USB_DESC", "tud_descriptor_string_cb called, rhport=%d, index=%d", rhport, index);
 
     const char **descs = (rhport == 0) ? string_descriptor_fs : string_descriptor_hs;
     if (index >= STRING_DESC_COUNT) return NULL;
