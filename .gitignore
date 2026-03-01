@@ -15,7 +15,9 @@ data/www/
 .idea/
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/settings.local.json
+!.claude/skills/
 .tldr/
 .tldrignore
 

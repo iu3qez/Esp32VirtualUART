@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(idf.py set-target:*)",
+      "Bash(source:*)",
+      "Bash(export:*)",
+      "Bash(. $IDF_PATH/export.sh)",
+      "Bash(. /home/sf/esp/esp-idf/export.sh)",
+      "Bash(idf.py build:*)",
+      "Bash(git -C:*)",
+      "Bash(git -C /home/sf/src/Esp32VirtualUART push)",
+      "Bash(npm:*)",
+      "Bash(node --version:*)",
+      "Bash(cd frontend && npm run build:*)",
+      "Bash(cmake --build:*)",
+      "Bash(ls:*)",
+      "mcp__plugin_serena_serena__activate_project",
+      "mcp__plugin_serena_serena__check_onboarding_performed",
+      "mcp__plugin_serena_serena__onboarding",
+      "mcp__plugin_serena_serena__write_memory"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "bash -c 'FILE=\"$CLAUDE_FILE_PATH\"; case \"$FILE\" in */managed_components/*) echo \"BLOCKED: Do not edit managed_components/ — these are auto-downloaded dependencies\" >&2; exit 1;; *Esp32VirtualUART/sdkconfig) echo \"BLOCKED: Edit sdkconfig.defaults instead of sdkconfig (sdkconfig is auto-generated)\" >&2; exit 1;; esac'"
+      }
+    ]
+  }
+}
