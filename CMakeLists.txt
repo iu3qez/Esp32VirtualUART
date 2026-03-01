@@ -13,6 +13,17 @@ add_custom_command(
 )
 add_custom_target(patch_cdc_count ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.cdc_count_patched)
 
+# Patch tusb_config.h for dual USB device mode (FS + HS rhport modes + CFG_TUD_MAX_RHPORT)
+set(TUSB_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/managed_components/espressif__esp_tinyusb/include/tusb_config.h")
+add_custom_command(
+    OUTPUT ${CMAKE_BINARY_DIR}/config/.tusb_dual_patched
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tools/patch_tusb_dual.py ${TUSB_CONFIG_FILE}
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/config/.tusb_dual_patched
+    DEPENDS ${TUSB_CONFIG_FILE}
+    COMMENT "Patching tusb_config.h for dual USB (FS + HS device mode)"
+)
+add_custom_target(patch_tusb_dual ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.tusb_dual_patched)
+
 # Patch DWC2 RX FIFO allocation: use single-buffered (1x) instead of double-buffered (2x).
 # ESP32-P4 HS DWC2 has only 3584 bytes (896 words) of FIFO. Single-buffered RX gives
 # extra headroom for the TX FIFOs and is sufficient for CDC serial data.
@@ -32,7 +43,7 @@ add_custom_target(patch_dfifo ALL DEPENDS ${CMAKE_BINARY_DIR}/config/.dfifo_patc
 idf_build_get_property(build_components BUILD_COMPONENTS)
 foreach(comp ${build_components})
     if(TARGET __idf_${comp})
-        add_dependencies(__idf_${comp} patch_cdc_count patch_dfifo)
+        add_dependencies(__idf_${comp} patch_cdc_count patch_tusb_dual patch_dfifo)
     endif()
 endforeach()
 

@@ -5,12 +5,11 @@ idf_component_register(
     PRIV_REQUIRES esp_tinyusb usb
 )
 
-# Force linker to pull our strong descriptor callbacks from this archive,
-# overriding the weak defaults in esp_tinyusb/tinyusb.
+# esp_tinyusb's descriptors_control.c provides STRONG (non-weak) definitions
+# of tud_descriptor_*_cb. To override them with ours, we must force the linker
+# to include ALL objects from this archive via --whole-archive.
 target_link_libraries(${COMPONENT_LIB} INTERFACE
-    "-u tud_descriptor_device_cb"
-    "-u tud_descriptor_configuration_cb"
-    "-u tud_descriptor_string_cb"
-    "-u tud_descriptor_device_qualifier_cb"
-    "-u tud_descriptor_other_speed_configuration_cb"
+    -Wl,--whole-archive
+    $<TARGET_FILE:${COMPONENT_LIB}>
+    -Wl,--no-whole-archive
 )
