@@ -3,6 +3,7 @@
 #include "tusb.h"
 #include "tusb_cdc_acm.h"
 #include "esp_private/usb_phy.h"
+#include "soc/lp_system_struct.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -179,6 +180,13 @@ esp_err_t port_cdc_init(void)
 
     ESP_LOGI(TAG, "Initializing dual USB: %d CDC on FS (rhport 0) + %d CDC on HS (rhport 1) = %d total",
              CDC_PORT_COUNT_FS, CDC_PORT_COUNT_HS, CDC_PORT_COUNT);
+
+    // ---- Step 0: Swap USB FS PHY mux so OTG FS uses PHY 0 (instead of USJ) ----
+    // ESP32-P4 has 2 FS PHYs. Default: PHY0=USB-SERIAL-JTAG, PHY1=OTG_FS.
+    // Swap so OTG FS gets PHY 0 (the one wired to the USB connector on most boards).
+    LP_SYS.usb_ctrl.sw_hw_usb_phy_sel = 1;  // enable software PHY mapping
+    LP_SYS.usb_ctrl.sw_usb_phy_sel = 1;     // swap: OTG_FS→PHY0, USJ→PHY1
+    ESP_LOGI(TAG, "USB FS PHY mux swapped: OTG_FS→PHY0, USJ→PHY1");
 
     // ---- Step 1: Initialize both USB PHYs ----
 
